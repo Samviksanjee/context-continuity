@@ -70,3 +70,11 @@ Signal Orange — #F26B3A. It is the unmistakable color of a newly connected ins
 5. Architecture: perceive → remember → reason → take action.
 6. Trust: provenance, permissions, and forgetting are first-class controls.
 7. Closing: a future where the phone does not ask users to repeat themselves.
+
+## Style Decisions
+
+- The page uses a visible atlas/index language: plotted section states, chapter numbers, and progress cues make the narrative feel like a mapped field guide rather than a stacked landing page.
+- Signal Orange — #F26B3A — is reserved for surfaced insight, permission, provenance, and decisive action. It dominates only the final closing signal event.
+- The italic editorial accent represents human continuity and appears only at emotional pivots in major headlines; Space Grotesk remains the primary display voice and IBM Plex the system voice.
+- The linked-aperture mark is repeated as a bracket-and-node grammar across index states, evidence labels, and diagrammatic dividers.
+- Every product visual follows the same evidence language: fine connector lines, archival tags, sparse signal nodes, and visible provenance framing.

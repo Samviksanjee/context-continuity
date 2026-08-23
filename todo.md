@@ -21,3 +21,7 @@
 - [x] Add a browser microphone-device selector after permission is granted.
 - [x] Render a responsive live audio-wave indicator during voice capture.
 - [x] Validate and publish the enhanced voice interface.
+- [x] Add installable PWA metadata and offline application-shell caching.
+- [x] Make the mobile layout and context graph fully responsive.
+- [x] Add pinch-to-zoom and pan gestures to the context graph.
+- [x] Validate and publish the offline mobile PWA experience.

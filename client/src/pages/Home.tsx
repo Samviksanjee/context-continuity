@@ -1,6 +1,6 @@
 /* Signal Atlas: editorial systems design, warm paper + ink + signal orange, asymmetric narrative layouts. */
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownRight, ArrowUpRight, Camera, ChevronRight, CircleHelp, FileText, LockKeyhole, Menu, Mic, MoveRight, Network, Play, ScanLine, Send, Sparkles, Timer, X } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { ArrowDownRight, ArrowUpRight, Camera, ChevronRight, CircleHelp, Download, FileText, LockKeyhole, Menu, Mic, Minus, MoveRight, Network, Play, Plus, RotateCcw, ScanLine, Send, Sparkles, Timer, WifiOff, X } from "lucide-react";
 
 const layers = [
   { key: "perceive", label: "01 / Perceive", title: "Notice what is happening", copy: "Camera, screen, voice and documents become structured signals — without asking you to narrate the obvious.", icon: ScanLine, color: "#DDE8E2" },
@@ -25,9 +25,14 @@ type MemorySpace = {
 type BrowserRecognitionEvent = { results: { [index: number]: { [index: number]: { transcript: string } } } };
 type BrowserRecognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onstart: (() => void) | null; onresult: ((event: BrowserRecognitionEvent) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; };
 type BrowserRecognitionConstructor = new () => BrowserRecognition;
+type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
+type GraphPoint = { x: number; y: number };
 
 const graphPositions = [
   { x: 15, y: 22 }, { x: 84, y: 19 }, { x: 12, y: 74 }, { x: 86, y: 77 }, { x: 65, y: 56 }, { x: 30, y: 50 },
+];
+const atlasSections = [
+  { index: "01", id: "thesis", label: "THESIS" }, { index: "02", id: "story", label: "THREAD" }, { index: "03", id: "memory-demo", label: "SWITCH" }, { index: "04", id: "architecture", label: "SYSTEM" }, { index: "05", id: "trust", label: "TRUST" },
 ];
 
 const memorySpaces: MemorySpace[] = [
@@ -56,12 +61,15 @@ function scrollToId(id: string) {
 
 export default function Home() {
   const [activeLayer, setActiveLayer] = useState("remember");
+  const [activeAtlasId, setActiveAtlasId] = useState("thesis");
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeMemoryKey, setActiveMemoryKey] = useState("work-review");
   const [showEvidence, setShowEvidence] = useState(false);
   const [userInput, setUserInput] = useState("");
   const [captureSource, setCaptureSource] = useState<CaptureSource>("NOTE");
-  const [liveMemories, setLiveMemories] = useState<MemorySpace[]>([]);
+  const [liveMemories, setLiveMemories] = useState<MemorySpace[]>(() => {
+    try { return JSON.parse(window.localStorage.getItem("contextos-live-memories") ?? "[]") as MemorySpace[]; } catch { return []; }
+  });
   const [captureStatus, setCaptureStatus] = useState("Choose a source, capture deliberately, then map the evidence.");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -71,8 +79,15 @@ export default function Home() {
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicrophoneId, setSelectedMicrophoneId] = useState("");
   const [isDiscoveringMicrophones, setIsDiscoveringMicrophones] = useState(false);
+  const [deferredInstall, setDeferredInstall] = useState<InstallPromptEvent | null>(null);
+  const [installStatus, setInstallStatus] = useState("");
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
+  const [graphView, setGraphView] = useState({ scale: 1, x: 0, y: 0 });
+  const [isGraphInteracting, setIsGraphInteracting] = useState(false);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const graphPointersRef = useRef(new Map<number, GraphPoint>());
+  const graphGestureRef = useRef({ lastPoint: null as GraphPoint | null, lastCenter: null as GraphPoint | null, lastDistance: 0 });
   const active = layers.find((layer) => layer.key === activeLayer) ?? layers[1];
   const allMemories = [...liveMemories, ...memorySpaces];
   const activeMemory = allMemories.find((memory) => memory.key === activeMemoryKey) ?? allMemories[0];
@@ -88,6 +103,37 @@ export default function Home() {
   }, [cameraOpen, cameraStream]);
 
   useEffect(() => () => { cameraStream?.getTracks().forEach((track) => track.stop()); }, [cameraStream]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem("contextos-live-memories", JSON.stringify(liveMemories)); } catch { /* Browser storage can be unavailable in private modes. */ }
+  }, [liveMemories]);
+
+  useEffect(() => {
+    const setOnlineState = () => setIsOffline(!navigator.onLine);
+    const rememberInstall = (event: Event) => { event.preventDefault(); setDeferredInstall(event as InstallPromptEvent); };
+    const installed = () => { setDeferredInstall(null); setInstallStatus("ContextOS is installed. Your saved local threads remain on this device."); };
+    window.addEventListener("online", setOnlineState);
+    window.addEventListener("offline", setOnlineState);
+    window.addEventListener("beforeinstallprompt", rememberInstall);
+    window.addEventListener("appinstalled", installed);
+    return () => {
+      window.removeEventListener("online", setOnlineState);
+      window.removeEventListener("offline", setOnlineState);
+      window.removeEventListener("beforeinstallprompt", rememberInstall);
+      window.removeEventListener("appinstalled", installed);
+    };
+  }, []);
+
+  useEffect(() => { setGraphView({ scale: 1, x: 0, y: 0 }); }, [activeMemoryKey]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      const activeEntry = entries.filter((entry) => entry.isIntersecting).sort((first, second) => second.intersectionRatio - first.intersectionRatio)[0];
+      if (activeEntry) setActiveAtlasId(activeEntry.target.id);
+    }, { rootMargin: "-18% 0px -55% 0px", threshold: [0.08, 0.35, 0.65] });
+    atlasSections.forEach(({ id }) => { const section = document.getElementById(id); if (section) observer.observe(section); });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const refreshOnDeviceChange = () => { void refreshMicrophones(); };
@@ -128,7 +174,7 @@ export default function Home() {
     setActiveMemoryKey(captured.key);
     setSelectedNode(captured.nodes[0] ?? null);
     setShowEvidence(true);
-    setCaptureStatus("Context mapped in this browser session. Inspect the nodes and evidence below.");
+    setCaptureStatus("Context mapped on this device. Inspect the nodes and evidence below—even when offline.");
     setUserInput("");
   }
 
@@ -248,7 +294,64 @@ export default function Home() {
     setCameraPreview(canvas.toDataURL("image/jpeg", 0.82));
     closeCamera();
     setUserInput((current) => current || "Camera observation captured. Describe the important people, time, place, or task shown in the frame.");
-    setCaptureStatus("Frame captured in this browser session. Add a concise observation so the local graph can map it.");
+    setCaptureStatus("Frame captured on this device. Add a concise observation so the local graph can map it.");
+  }
+
+  async function installPwa() {
+    if (!deferredInstall) {
+      setInstallStatus("Use your browser menu: Install app or Add to Home Screen. Once opened online, ContextOS remains available offline.");
+      return;
+    }
+    await deferredInstall.prompt();
+    const choice = await deferredInstall.userChoice;
+    setInstallStatus(choice.outcome === "accepted" ? "Installing ContextOS to this device…" : "Install cancelled. You can add it later from the browser menu.");
+    setDeferredInstall(null);
+  }
+
+  function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
+  function distance([first, second]: GraphPoint[]) { return Math.hypot(first.x - second.x, first.y - second.y); }
+  function center([first, second]: GraphPoint[]) { return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 }; }
+  function resetGraphView() { setGraphView({ scale: 1, x: 0, y: 0 }); }
+  function adjustGraphZoom(amount: number) { setGraphView((view) => ({ ...view, scale: clamp(view.scale + amount, 0.75, 2.4) })); }
+
+  function onGraphPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    graphPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = Array.from(graphPointersRef.current.values());
+    graphGestureRef.current.lastPoint = points[0] ?? null;
+    graphGestureRef.current.lastCenter = points.length >= 2 ? center(points) : null;
+    graphGestureRef.current.lastDistance = points.length >= 2 ? distance(points) : 0;
+    setIsGraphInteracting(true);
+  }
+
+  function onGraphPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!graphPointersRef.current.has(event.pointerId)) return;
+    graphPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = Array.from(graphPointersRef.current.values());
+    if (points.length >= 2) {
+      const nextCenter = center(points);
+      const nextDistance = distance(points);
+      const ratio = graphGestureRef.current.lastDistance ? nextDistance / graphGestureRef.current.lastDistance : 1;
+      const priorCenter = graphGestureRef.current.lastCenter ?? nextCenter;
+      setGraphView((view) => ({ scale: clamp(view.scale * ratio, 0.75, 2.4), x: clamp(view.x + nextCenter.x - priorCenter.x, -150, 150), y: clamp(view.y + nextCenter.y - priorCenter.y, -115, 115) }));
+      graphGestureRef.current.lastCenter = nextCenter;
+      graphGestureRef.current.lastDistance = nextDistance;
+    } else if (points.length === 1) {
+      const point = points[0];
+      const prior = graphGestureRef.current.lastPoint ?? point;
+      if (event.pointerType !== "mouse" || event.buttons === 1) setGraphView((view) => ({ ...view, x: clamp(view.x + point.x - prior.x, -150, 150), y: clamp(view.y + point.y - prior.y, -115, 115) }));
+      graphGestureRef.current.lastPoint = point;
+    }
+  }
+
+  function onGraphPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    graphPointersRef.current.delete(event.pointerId);
+    const points = Array.from(graphPointersRef.current.values());
+    graphGestureRef.current.lastPoint = points[0] ?? null;
+    graphGestureRef.current.lastCenter = points.length >= 2 ? center(points) : null;
+    graphGestureRef.current.lastDistance = points.length >= 2 ? distance(points) : 0;
+    if (!points.length) setIsGraphInteracting(false);
   }
 
   return (
@@ -266,12 +369,17 @@ export default function Home() {
         </nav>
         <button className="menu-toggle" aria-label="Toggle menu" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={18} /> : <Menu size={18} />}</button>
         <button className="nav-cta" onClick={() => scrollToId("architecture")}>Explore the layer <ArrowUpRight size={15} /></button>
+        <button className="install-cta" onClick={() => void installPwa()}><Download size={14} /> {deferredInstall ? "Install" : "Add to home"}</button>
       </header>
+      <div className="mobile-atlas" aria-label="ContextOS atlas progress">
+        <span>ATLAS / 05</span>
+        <div>{atlasSections.map(({ index, id, label }) => <button key={id} className={activeAtlasId === id ? "active" : ""} onClick={() => scrollToId(id)} aria-label={`Go to ${label.toLowerCase()} section`}><i /><b>{index}</b><em>{label}</em></button>)}</div>
+      </div>
 
       <aside className="atlas-rail" aria-label="Atlas index">
         <span className="atlas-title">ATLAS / 05</span>
         <div className="atlas-track" />
-        {[['01', 'thesis', 'THESIS'], ['02', 'story', 'THREAD'], ['03', 'memory-demo', 'SWITCH'], ['04', 'architecture', 'SYSTEM'], ['05', 'trust', 'TRUST']].map(([index, target, label]) => <button key={target} onClick={() => scrollToId(target)}><i /><span>{index}</span><small>{label}</small></button>)}
+        {atlasSections.map(({ index, id, label }) => <button key={id} className={activeAtlasId === id ? "active" : ""} onClick={() => scrollToId(id)}><i /><span>{index}</span><small>{label}</small></button>)}
       </aside>
 
       <main id="top">
@@ -321,7 +429,7 @@ export default function Home() {
             </div>
             <div className="memory-stage" role="tabpanel" aria-live="polite" aria-label={`${activeMemory.label} context details`}>
               <div className="capture-console">
-                <div className="capture-console-head"><span className="micro-label">TRY CONTEXTOS / BROWSER SESSION</span><span>Capture deliberately</span></div>
+                <div className="capture-console-head"><span className="micro-label">TRY CONTEXTOS / THIS DEVICE</span><span className={isOffline ? "offline-state" : "online-state"}>{isOffline ? <><WifiOff size={11} /> OFFLINE MODE</> : "PWA READY"}</span></div>
                 <textarea value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="Try: ‘Aisha will update the budget slide before tomorrow’s 9:00 AM client review. Need to verify slide 7.’" aria-label="Enter a local ContextOS input" />
                 <input ref={documentInputRef} className="visually-hidden" type="file" accept=".txt,.md,.csv,.json,.pdf,image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleDocument(file); event.currentTarget.value = ""; }} />
                 {cameraOpen && <div className="camera-capture"><video ref={videoRef} muted playsInline aria-label="Live camera preview" /><div><button onClick={captureCameraFrame}>Capture frame</button><button onClick={closeCamera}>Close camera</button></div></div>}
@@ -330,17 +438,23 @@ export default function Home() {
                 <div className="microphone-picker"><div><span className="microphone-picker-label">VOICE INPUT</span><select value={selectedMicrophoneId} onChange={(event) => setSelectedMicrophoneId(event.target.value)} disabled={!microphones.length || isListening} aria-label="Preferred microphone input"><option value="">{microphones.length ? "Browser default microphone" : "Detect microphones first"}</option>{microphones.map((device, index) => <option key={`${device.deviceId}-${index}`} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}</select></div><button onClick={() => void discoverMicrophones()} disabled={isDiscoveringMicrophones || isListening}>{isDiscoveringMicrophones ? "CHECKING…" : "DETECT INPUTS"}</button></div>
                 {isListening && <div className="audio-wave" role="status" aria-label="Microphone active; listening for a context note"><span /><span /><span /><span /><span /><span /><span /><span /><em>MIC ACTIVE</em></div>}
                 <div className="capture-status" aria-live="polite">{captureStatus}</div>
-                <div className="capture-actions"><span className="capture-privacy">Voice uses your browser’s speech provider; strict offline voice is available in the Android app.</span><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div>
+                <div className="capture-actions"><span className="capture-privacy">Text, graph, and saved threads work offline after first load. Browser voice may need its provider; strict offline voice is available in the Android app.</span><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div>
+                {installStatus && <div className="pwa-install-status" aria-live="polite">{installStatus}</div>}
               </div>
               <div className="stage-top"><div><span className="micro-label">NOW IN FOCUS</span><h3>{activeMemory.label}</h3></div><span className="stage-status" style={{ color: activeMemory.color }}><i style={{ backgroundColor: activeMemory.color }} /> {activeMemory.status}</span></div>
-              <div className="memory-graph" style={{ "--memory-color": activeMemory.color } as CSSProperties}>
-                <svg className="graph-connections" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <line key={`${activeMemory.key}-core-${index}-${node}`} x1="50" y1="50" x2={point.x} y2={point.y} />; })}
-                  {activeMemory.nodes.slice(1).map((node, index) => { const first = graphPositions[index % graphPositions.length]; const next = graphPositions[(index + 1) % graphPositions.length]; return <line key={`${activeMemory.key}-relation-${index}-${node}`} className="graph-link-secondary" x1={first.x} y1={first.y} x2={next.x} y2={next.y} />; })}
-                </svg>
-                {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <button key={`${activeMemory.key}-node-${index}-${node}`} className={selectedNode === node ? "memory-node selected" : "memory-node"} style={{ "--node-x": `${point.x}%`, "--node-y": `${point.y}%` } as CSSProperties} onClick={() => setSelectedNode(node)}>{node}</button>; })}
-                <div className="memory-core"><Network size={17} /><span>CONTEXT<br />GRAPH</span></div>
-                <div className="graph-inspector"><span className="micro-label">SELECTED LINK</span><strong>{selectedNode ?? activeMemory.nodes[0]} <i>→</i> {activeMemory.label}</strong></div>
+              <div className="graph-viewport">
+                <div className={isGraphInteracting ? "memory-graph is-gesturing" : "memory-graph"} style={{ "--memory-color": activeMemory.color } as CSSProperties} onPointerDown={onGraphPointerDown} onPointerMove={onGraphPointerMove} onPointerUp={onGraphPointerEnd} onPointerCancel={onGraphPointerEnd}>
+                  <div className="graph-scene" style={{ transform: `translate(${graphView.x}px, ${graphView.y}px) scale(${graphView.scale})` }}>
+                    <svg className="graph-connections" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                      {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <line key={`${activeMemory.key}-core-${index}-${node}`} x1="50" y1="50" x2={point.x} y2={point.y} />; })}
+                      {activeMemory.nodes.slice(1).map((node, index) => { const first = graphPositions[index % graphPositions.length]; const next = graphPositions[(index + 1) % graphPositions.length]; return <line key={`${activeMemory.key}-relation-${index}-${node}`} className="graph-link-secondary" x1={first.x} y1={first.y} x2={next.x} y2={next.y} />; })}
+                    </svg>
+                    {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <button key={`${activeMemory.key}-node-${index}-${node}`} className={selectedNode === node ? "memory-node selected" : "memory-node"} style={{ "--node-x": `${point.x}%`, "--node-y": `${point.y}%` } as CSSProperties} onClick={() => setSelectedNode(node)}>{node}</button>; })}
+                    <div className="memory-core"><Network size={17} /><span>CONTEXT<br />GRAPH</span></div>
+                  </div>
+                  <div className="graph-inspector"><span className="micro-label">SELECTED LINK</span><strong>{selectedNode ?? activeMemory.nodes[0]} <i>→</i> {activeMemory.label}</strong></div>
+                </div>
+                <div className="graph-gesture-bar"><span>PINCH TO ZOOM · DRAG TO PAN</span><div><button aria-label="Zoom out" onClick={() => adjustGraphZoom(-0.15)}><Minus size={13} /></button><output aria-live="polite">{Math.round(graphView.scale * 100)}%</output><button aria-label="Zoom in" onClick={() => adjustGraphZoom(0.15)}><Plus size={13} /></button><button className="graph-reset" onClick={resetGraphView}><RotateCcw size={12} /> Reset</button></div></div>
               </div>
               <div className="memory-evidence"><div><span className="micro-label">EVIDENCE</span><strong>{activeMemory.source}</strong></div><div><span className="micro-label">RELATIONSHIP</span><strong>{activeMemory.relationship}</strong></div><div><span className="micro-label">CONFIDENCE</span><strong>{activeMemory.confidence}</strong></div></div>
               <div className="memory-ledger"><div className="ledger-source"><span className="micro-label">CAPTURED INPUT</span><p>{activeMemory.raw}</p></div><div className="ledger-details"><span className="micro-label">EXTRACTED LOCALLY</span>{activeMemory.details.map((detail, index) => <span key={`${activeMemory.key}-detail-${index}-${detail}`}>{detail}</span>)}</div></div>

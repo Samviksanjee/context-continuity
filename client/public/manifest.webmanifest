@@ -1,0 +1,16 @@
+{
+  "name": "ContextOS — Context Continuity",
+  "short_name": "ContextOS",
+  "description": "A private, local-first context continuity demo.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F8F7F3",
+  "theme_color": "#F8F7F3",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

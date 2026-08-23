@@ -10,6 +10,7 @@ This repository contains a responsive React concept experience and an interactiv
 |---|---|
 | **Concept narrative** | The opportunity, product thesis, continuity timeline, architecture, and trust principles. |
 | **Interactive demo** | A switchable workbench that activates one context thread while preserving others as background memory. |
+| **Mobile PWA** | Installable app shell with offline caching, local browser persistence, and pinch-to-zoom graph controls. |
 | **Design system** | Signal Atlas: editorial paper tones, systems diagrams, ink typography, and signal-orange insights. |
 | **Documentation** | Product architecture, demo walkthrough, development workflow, and implementation guidance. |
 
@@ -31,8 +32,15 @@ The **Switch the memory. Keep the meaning.** section models three realistic, ind
 | Other threads remain available but inactive. | Context is scoped; unrelated memories should not contaminate a current workflow. |
 | The graph exposes source and relationship data. | Any insight should carry provenance rather than appear as an unexplained conclusion. |
 | A next action is presented as a button. | Suggestions are permission-based prompts, never silent task execution. |
+| The graph can be pinched, panned, and reset on touch devices. | Complex relationships remain inspectable without a desktop-only interaction model. |
 
 For an interaction-by-interaction walkthrough, see [the demo guide](docs/DEMO_GUIDE.md).
+
+## Installable offline web demo
+
+The web demo is an installable PWA. Open the published site while online once, then tap **Install** when offered or use the browser menu to choose **Add to Home Screen**. The application shell, interaction code, local visual assets, and threads you map in the demo are cached or stored on the device, allowing the text input, graph, and saved browser threads to work without a network connection after that first load.
+
+The graph supports touch-native pinch-to-zoom and drag-to-pan, with visible plus, minus, and reset controls as an accessible alternative. Browser speech recognition is deliberately labelled as provider-dependent and may require a connection; the native Android MVP remains the strict on-device voice path.
 
 ## Architecture at a glance
 
@@ -61,6 +69,7 @@ Detailed models, boundaries, and implementation decisions are documented in [Arc
 context-continuity/
 ├── client/
 │   ├── index.html                 # Document title and font loading
+│   ├── public/                     # PWA manifest, worker, and install icons
 │   └── src/
 │       ├── pages/Home.tsx          # Narrative page and interactive demo state
 │       ├── index.css               # Signal Atlas system and responsive layout
@@ -91,7 +100,7 @@ cd android-contextos
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
 
-The local engine has three automated unit tests for work, home, and environmental-text handling. The supplied debug APK was built successfully with this command and is intended for installation on a test device, not production distribution.
+The local engine has five automated unit tests covering work, home, environmental-text handling, provenance-bound query matching, and next-step query behavior. The supplied debug APK was built successfully with this command and is intended for installation on a test device, not production distribution.
 
 ## Local development
 
@@ -104,11 +113,11 @@ The project uses **React 19**, **Vite**, **TypeScript**, Tailwind CSS 4, and the
 | `pnpm build` | Create a production build and bundle the static server entry. |
 | `pnpm format` | Format source files using Prettier. |
 
-Install dependencies with `pnpm install`, then run `pnpm dev`. The demonstration uses local React state only; it does not connect to an API, persist a user’s memory, or make decisions about a real person.
+Install dependencies with `pnpm install`, then run `pnpm dev`. The demonstration does not connect to an API or make decisions about a real person. Mapped demo threads are stored in browser local storage on the device so they can be revisited offline; they can be cleared through normal browser site-data controls.
 
 ## Prototype boundaries
 
-This project is intentionally an experience prototype. It does **not** collect device data, read documents, call an AI model, create tasks, synchronize hardware, or store user memory. These responsibilities belong to a governed product architecture with explicit consent, source provenance, scope controls, retention rules, and secure on-device processing.
+This project is intentionally an experience prototype. It does **not** collect device data in the background, call an AI model, create tasks, or synchronize hardware. The browser demo processes explicit text input and supported text-document selection locally, then persists mapped demo threads only in browser local storage. A governed product architecture must add explicit consent, source provenance, retention controls, and secure on-device processing before handling real personal data.
 
 > A future implementation should treat memory as a governed continuity substrate, not as an unbounded transcript cache. This direction aligns with contemporary personal-AI memory research that emphasizes lifecycle, multimodal evidence, correction, forgetting, privacy, and edge/cloud deployment.[2]
 

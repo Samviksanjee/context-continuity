@@ -78,3 +78,4 @@ Signal Orange — #F26B3A. It is the unmistakable color of a newly connected ins
 - The italic editorial accent represents human continuity and appears only at emotional pivots in major headlines; Space Grotesk remains the primary display voice and IBM Plex the system voice.
 - The linked-aperture mark is repeated as a bracket-and-node grammar across index states, evidence labels, and diagrammatic dividers.
 - Every product visual follows the same evidence language: fine connector lines, archival tags, sparse signal nodes, and visible provenance framing.
+- Mobile keeps the atlas visible as a persistent plotted chapter tracker, while the linked-aperture bracket-and-node language anchors both the rail and the graph controls.

@@ -1,0 +1,3 @@
+- [ ] Create a private GitHub repository for the project.
+- [ ] Push the completed Context Continuity source and verify the remote.
+- [ ] Share the repository link with the user.

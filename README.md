@@ -69,9 +69,27 @@ context-continuity/
 │   ├── ARCHITECTURE.md             # Product and technical reference
 │   ├── DEMO_GUIDE.md               # Memory-switching interaction walkthrough
 │   └── DEVELOPMENT.md               # Local workflow, validation, and deployment notes
+├── android-contextos/               # Native local-only Android MVP
+│   ├── app/                         # Compose UI, local graph engine, capture, and tests
+│   └── README.md                    # APK build/install and security contract
 ├── ideas.md                        # Chosen visual philosophy and content narrative
 └── todo.md                         # Project task checklist
 ```
+
+## Native Android MVP
+
+The repository now includes [`android-contextos`](android-contextos/), a native Android application that implements a safe vertical slice of the product. It accepts deliberately shared text, private notes, camera images, documents, and — when the phone provides an on-device recognizer — a user-triggered voice note. Its graph, evidence, suggestions, and deletion controls remain on the phone; the built APK declares **only** microphone permission and does not declare Internet or network-state permission.
+
+> This is a deployable **standalone application**, not an OriginOS system module. Android’s application sandbox means a conventional app cannot inspect arbitrary private data from other apps. A true iQOO phone feature therefore requires iQOO/vivo to sponsor a signed platform integration, bounded context-provider APIs, and a system consent broker. See [OEM integration boundaries](docs/OEM_INTEGRATION.md) and [privacy/feasibility notes](docs/FEASIBILITY_AND_PRIVACY.md).
+
+Build the native application with:
+
+```bash
+cd android-contextos
+./gradlew :app:testDebugUnitTest :app:assembleDebug
+```
+
+The local engine has three automated unit tests for work, home, and environmental-text handling. The supplied debug APK was built successfully with this command and is intended for installation on a test device, not production distribution.
 
 ## Local development
 

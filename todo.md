@@ -5,3 +5,6 @@
 - [x] Write the README and technical documentation.
 - [x] Replace abstract demo threads with realistic everyday phone workflows.
 - [x] Validate, commit, and push the updated project.
+- [x] Define the standalone on-device Android prototype boundary and OEM integration requirements.
+- [x] Build the local-only ContextOS prototype package and privacy controls.
+- [ ] Validate the prototype and publish the implementation guidance.

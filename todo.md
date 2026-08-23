@@ -16,3 +16,4 @@
 - [x] Render context nodes and connections dynamically from live input.
 - [x] Enable browser voice, document, and camera capture in the web demo.
 - [x] Validate and publish the enhanced capture-and-graph experience.
+- [ ] Fix duplicate React keys in the dynamic graph and verify the console.

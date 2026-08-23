@@ -17,3 +17,4 @@
 - [x] Enable browser voice, document, and camera capture in the web demo.
 - [x] Validate and publish the enhanced capture-and-graph experience.
 - [x] Fix duplicate React keys in the dynamic graph and verify the console.
+- [x] Add microphone preflight checks and actionable voice-capture recovery guidance.

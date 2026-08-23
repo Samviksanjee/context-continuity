@@ -23,7 +23,7 @@ type MemorySpace = {
 };
 
 type BrowserRecognitionEvent = { results: { [index: number]: { [index: number]: { transcript: string } } } };
-type BrowserRecognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((event: BrowserRecognitionEvent) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; };
+type BrowserRecognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onstart: (() => void) | null; onresult: ((event: BrowserRecognitionEvent) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; };
 type BrowserRecognitionConstructor = new () => BrowserRecognition;
 
 const graphPositions = [
@@ -67,6 +67,7 @@ export default function Home() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraPreview, setCameraPreview] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const active = layers.find((layer) => layer.key === activeLayer) ?? layers[1];
@@ -96,18 +97,42 @@ export default function Home() {
     setUserInput("");
   }
 
-  function startVoiceCapture() {
+  async function startVoiceCapture() {
     const browserWindow = window as unknown as { SpeechRecognition?: BrowserRecognitionConstructor; webkitSpeechRecognition?: BrowserRecognitionConstructor };
     const Recognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
     setCaptureSource("VOICE");
+    if (!window.isSecureContext) {
+      setCaptureStatus("Voice needs a secure HTTPS page. Open the published preview over HTTPS, then allow microphone access.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCaptureStatus("This browser cannot request microphone access. Use current Chrome or Edge, or enter a transcript manually.");
+      return;
+    }
     if (!Recognition) {
       setCaptureStatus("Voice transcription is not available in this browser. Use Chrome with a configured speech service, or enter a transcript manually.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      stream.getTracks().forEach((track) => track.stop());
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : "UnknownError";
+      const message = name === "NotAllowedError"
+        ? "Microphone access is blocked. Select the lock icon beside the address bar, allow Microphone, then retry."
+        : name === "NotFoundError"
+          ? "No microphone was detected. Connect or select a microphone in your device sound settings, then retry."
+          : name === "NotReadableError"
+            ? "Another app or browser tab is using the microphone. Close calls or recorders, then retry."
+            : `The browser could not start a microphone stream (${name}). Check your selected input device and retry.`;
+      setCaptureStatus(message);
       return;
     }
     const recognition = new Recognition();
     recognition.lang = navigator.language || "en-US";
     recognition.continuous = false;
     recognition.interimResults = false;
+    recognition.onstart = () => { setIsListening(true); setCaptureStatus("Listening now. Speak a short context note, then pause."); };
     recognition.onresult = (event) => {
       const transcript = event.results[0]?.[0]?.transcript?.trim() ?? "";
       if (transcript) {
@@ -115,10 +140,25 @@ export default function Home() {
         setCaptureStatus("Voice transcript ready. Review it, then map the context.");
       }
     };
-    recognition.onerror = (event) => setCaptureStatus(`Voice capture did not complete: ${event.error}. You can still enter text manually.`);
-    recognition.onend = () => setCaptureStatus((status) => status.startsWith("Listening") ? "Voice capture ended without a transcript. You can try again or enter text." : status);
-    setCaptureStatus("Listening through your browser’s speech service…");
-    recognition.start();
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      const message = event.error === "audio-capture"
+        ? "The speech service could not access the microphone after preflight. Close other microphone apps, confirm the correct input device in browser settings, refresh, and retry."
+        : event.error === "not-allowed" || event.error === "service-not-allowed"
+          ? "Voice permission or the browser speech service is blocked. Allow Microphone in the address-bar settings, then retry."
+          : event.error === "network"
+            ? "This browser’s speech provider is unavailable. The web demo has no offline speech fallback; use the Android app for strict on-device voice."
+            : `Voice capture did not complete (${event.error}). Check microphone permission and the selected input device, then retry.`;
+      setCaptureStatus(message);
+    };
+    recognition.onend = () => { setIsListening(false); setCaptureStatus((status) => status.startsWith("Listening") ? "Voice capture ended without a transcript. Check the microphone input level and try again." : status); };
+    try {
+      setCaptureStatus("Checking the microphone, then starting your browser’s speech service…");
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      setCaptureStatus("The browser could not start speech recognition. Refresh the page, confirm microphone permission, and try again.");
+    }
   }
 
   async function handleDocument(file: File) {
@@ -246,7 +286,7 @@ export default function Home() {
                 <input ref={documentInputRef} className="visually-hidden" type="file" accept=".txt,.md,.csv,.json,.pdf,image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleDocument(file); event.currentTarget.value = ""; }} />
                 {cameraOpen && <div className="camera-capture"><video ref={videoRef} muted playsInline aria-label="Live camera preview" /><div><button onClick={captureCameraFrame}>Capture frame</button><button onClick={closeCamera}>Close camera</button></div></div>}
                 {cameraPreview && <div className="camera-preview"><img src={cameraPreview} alt="Captured browser camera frame" /><span>Frame stays in this browser session.</span></div>}
-                <div className="capture-tools" aria-label="Capture from browser"><button onClick={() => setCaptureSource("NOTE")} className={captureSource === "NOTE" ? "active" : ""}><Sparkles size={13} />Note</button><button onClick={startVoiceCapture} className={captureSource === "VOICE" ? "active" : ""}><Mic size={13} />Voice</button><button onClick={() => documentInputRef.current?.click()} className={captureSource === "DOCUMENT" ? "active" : ""}><FileText size={13} />Document</button><button onClick={() => void openCamera()} className={captureSource === "CAMERA" ? "active" : ""}><Camera size={13} />Camera</button></div>
+                <div className="capture-tools" aria-label="Capture from browser"><button onClick={() => setCaptureSource("NOTE")} className={captureSource === "NOTE" ? "active" : ""}><Sparkles size={13} />Note</button><button onClick={() => void startVoiceCapture()} className={captureSource === "VOICE" ? "active" : ""} disabled={isListening}>{isListening ? <ScanLine size={13} /> : <Mic size={13} />}{isListening ? "Listening" : "Voice"}</button><button onClick={() => documentInputRef.current?.click()} className={captureSource === "DOCUMENT" ? "active" : ""}><FileText size={13} />Document</button><button onClick={() => void openCamera()} className={captureSource === "CAMERA" ? "active" : ""}><Camera size={13} />Camera</button></div>
                 <div className="capture-status" aria-live="polite">{captureStatus}</div>
                 <div className="capture-actions"><span className="capture-privacy">Voice uses your browser’s speech provider; strict offline voice is available in the Android app.</span><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div>
               </div>

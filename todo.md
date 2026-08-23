@@ -12,4 +12,4 @@
 - [x] Add offline natural-language graph queries to the Android voice path.
 - [x] Package and validate the reusable ContextOS implementation skill.
 - [x] Write the iQOO/vivo platform integration pitch outline and speaker script.
-- [ ] Validate and publish the expanded ContextOS package.
+- [x] Validate and publish the expanded ContextOS package.

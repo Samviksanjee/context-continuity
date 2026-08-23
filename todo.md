@@ -13,3 +13,6 @@
 - [x] Package and validate the reusable ContextOS implementation skill.
 - [x] Write the iQOO/vivo platform integration pitch outline and speaker script.
 - [x] Validate and publish the expanded ContextOS package.
+- [x] Render context nodes and connections dynamically from live input.
+- [x] Enable browser voice, document, and camera capture in the web demo.
+- [ ] Validate and publish the enhanced capture-and-graph experience.

@@ -1,5 +1,5 @@
 /* Signal Atlas: editorial systems design, warm paper + ink + signal orange, asymmetric narrative layouts. */
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowDownRight, ArrowUpRight, Camera, ChevronRight, CircleHelp, FileText, LockKeyhole, Menu, Mic, MoveRight, Network, Play, ScanLine, Send, Sparkles, Timer, X } from "lucide-react";
 
 const layers = [
@@ -21,6 +21,14 @@ type CaptureSource = "NOTE" | "VOICE" | "DOCUMENT" | "CAMERA";
 type MemorySpace = {
   key: string; label: string; cue: string; status: string; color: string; source: string; relationship: string; memory: string; why: string; action: string; confidence: string; nodes: string[]; raw: string; details: string[]; sourceKind: CaptureSource;
 };
+
+type BrowserRecognitionEvent = { results: { [index: number]: { [index: number]: { transcript: string } } } };
+type BrowserRecognition = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((event: BrowserRecognitionEvent) => void) | null; onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null; };
+type BrowserRecognitionConstructor = new () => BrowserRecognition;
+
+const graphPositions = [
+  { x: 15, y: 22 }, { x: 84, y: 19 }, { x: 12, y: 74 }, { x: 86, y: 77 }, { x: 65, y: 56 }, { x: 30, y: 50 },
+];
 
 const memorySpaces: MemorySpace[] = [
   { key: "work-review", label: "Tomorrow’s client review", cue: "Calendar + slide draft + chat", status: "ACTIVE THREAD", color: "#F26B3A", source: "Q2_client_review.pptx", relationship: "Aisha → budget slide", memory: "Slide 7 is still missing the approved Q2 numbers for tomorrow’s 9:00 AM review.", why: "The calendar invite, shared slide draft, and Aisha’s message all point to the same client review. The deadline is within 18 hours.", action: "Why this is in focus", confidence: "94%", nodes: ["Calendar", "Slides", "Aisha", "Finance", "Client"], raw: "Client review tomorrow at 9:00 AM. Aisha will add approved Q2 budget figures. Need to review slide 7.", details: ["Event: client review", "Time: tomorrow, 9:00 AM", "Person: Aisha", "Task: review slide 7"], sourceKind: "DOCUMENT" },
@@ -54,17 +62,113 @@ export default function Home() {
   const [userInput, setUserInput] = useState("");
   const [captureSource, setCaptureSource] = useState<CaptureSource>("NOTE");
   const [liveMemories, setLiveMemories] = useState<MemorySpace[]>([]);
+  const [captureStatus, setCaptureStatus] = useState("Choose a source, capture deliberately, then map the evidence.");
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraPreview, setCameraPreview] = useState<string | null>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const active = layers.find((layer) => layer.key === activeLayer) ?? layers[1];
   const allMemories = [...liveMemories, ...memorySpaces];
   const activeMemory = allMemories.find((memory) => memory.key === activeMemoryKey) ?? allMemories[0];
+
+  useEffect(() => {
+    if (cameraOpen && cameraStream && videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+      void videoRef.current.play();
+    }
+    return () => {
+      if (!cameraOpen) cameraStream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [cameraOpen, cameraStream]);
+
+  useEffect(() => () => { cameraStream?.getTracks().forEach((track) => track.stop()); }, [cameraStream]);
 
   function addLiveContext() {
     if (!userInput.trim()) return;
     const captured = createMemory(userInput, captureSource);
     setLiveMemories((current) => [captured, ...current]);
     setActiveMemoryKey(captured.key);
+    setSelectedNode(captured.nodes[0] ?? null);
     setShowEvidence(true);
+    setCaptureStatus("Context mapped in this browser session. Inspect the nodes and evidence below.");
     setUserInput("");
+  }
+
+  function startVoiceCapture() {
+    const browserWindow = window as unknown as { SpeechRecognition?: BrowserRecognitionConstructor; webkitSpeechRecognition?: BrowserRecognitionConstructor };
+    const Recognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+    setCaptureSource("VOICE");
+    if (!Recognition) {
+      setCaptureStatus("Voice transcription is not available in this browser. Use Chrome with a configured speech service, or enter a transcript manually.");
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = navigator.language || "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim() ?? "";
+      if (transcript) {
+        setUserInput(transcript);
+        setCaptureStatus("Voice transcript ready. Review it, then map the context.");
+      }
+    };
+    recognition.onerror = (event) => setCaptureStatus(`Voice capture did not complete: ${event.error}. You can still enter text manually.`);
+    recognition.onend = () => setCaptureStatus((status) => status.startsWith("Listening") ? "Voice capture ended without a transcript. You can try again or enter text." : status);
+    setCaptureStatus("Listening through your browser’s speech service…");
+    recognition.start();
+  }
+
+  async function handleDocument(file: File) {
+    setCaptureSource("DOCUMENT");
+    setCameraPreview(null);
+    const plainText = file.type.startsWith("text/") || /\.(txt|md|csv|json)$/i.test(file.name);
+    if (plainText) {
+      const text = (await file.text()).slice(0, 5000);
+      setUserInput(text);
+      setCaptureStatus(`Read ${file.name} locally in this browser. Review the text, then map it.`);
+      return;
+    }
+    setUserInput(`Document selected: ${file.name}. Add a short description, key people, timing, or task before mapping it.`);
+    setCaptureStatus("The browser demo registered the document name only. For local PDF/image text extraction, use the native Android ContextOS prototype.");
+  }
+
+  async function openCamera() {
+    setCaptureSource("CAMERA");
+    setCameraPreview(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCaptureStatus("Camera access is not available in this browser. Use a secure browser context or capture an image through the Android app.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+      setCameraStream(stream);
+      setCameraOpen(true);
+      setCaptureStatus("Camera live. Capture a frame, then add a brief observation before mapping it.");
+    } catch {
+      setCaptureStatus("Camera access was not granted. You can enter a camera observation manually instead.");
+    }
+  }
+
+  function closeCamera() {
+    cameraStream?.getTracks().forEach((track) => track.stop());
+    setCameraStream(null);
+    setCameraOpen(false);
+  }
+
+  function captureCameraFrame() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    setCameraPreview(canvas.toDataURL("image/jpeg", 0.82));
+    closeCamera();
+    setUserInput((current) => current || "Camera observation captured. Describe the important people, time, place, or task shown in the frame.");
+    setCaptureStatus("Frame captured in this browser session. Add a concise observation so the local graph can map it.");
   }
 
   return (
@@ -132,16 +236,29 @@ export default function Home() {
           <div className="memory-workbench">
             <div className="memory-selector" role="tablist" aria-label="Choose a context thread">
               <span className="micro-label">AVAILABLE CONTEXTS</span>
-              {allMemories.map((memory, index) => <button key={memory.key} role="tab" aria-selected={activeMemory.key === memory.key} className={activeMemory.key === memory.key ? "memory-choice active" : "memory-choice"} onClick={() => { setActiveMemoryKey(memory.key); setShowEvidence(false); }}><span className="choice-index">0{index + 1}</span><span className="choice-copy"><strong>{memory.label}</strong><small>{memory.cue}</small></span><span className="choice-status" style={{ backgroundColor: memory.color }} /></button>)}
+              {allMemories.map((memory, index) => <button key={memory.key} role="tab" aria-selected={activeMemory.key === memory.key} className={activeMemory.key === memory.key ? "memory-choice active" : "memory-choice"} onClick={() => { setActiveMemoryKey(memory.key); setSelectedNode(memory.nodes[0] ?? null); setShowEvidence(false); }}><span className="choice-index">0{index + 1}</span><span className="choice-copy"><strong>{memory.label}</strong><small>{memory.cue}</small></span><span className="choice-status" style={{ backgroundColor: memory.color }} /></button>)}
               <div className="selector-note"><span className="signal-dot" /> Only the active thread can shape the next suggestion.</div>
             </div>
             <div className="memory-stage" role="tabpanel" aria-live="polite" aria-label={`${activeMemory.label} context details`}>
-              <div className="capture-console"><div className="capture-console-head"><span className="micro-label">TRY CONTEXTOS / NO CLOUD</span><span>Browser-memory demo</span></div><textarea value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="Try: ‘Aisha will update the budget slide before tomorrow’s 9:00 AM client review. Need to verify slide 7.’" aria-label="Enter a local ContextOS input" /><div className="capture-actions"><div className="source-switch" aria-label="Choose the evidence source">{(["NOTE", "VOICE", "DOCUMENT", "CAMERA"] as CaptureSource[]).map((source) => <button key={source} className={captureSource === source ? "active" : ""} onClick={() => setCaptureSource(source)}>{source === "VOICE" ? <Mic size={12} /> : source === "DOCUMENT" ? <FileText size={12} /> : source === "CAMERA" ? <Camera size={12} /> : <Sparkles size={12} />}{source}</button>)}</div><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div></div>
+              <div className="capture-console">
+                <div className="capture-console-head"><span className="micro-label">TRY CONTEXTOS / BROWSER SESSION</span><span>Capture deliberately</span></div>
+                <textarea value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="Try: ‘Aisha will update the budget slide before tomorrow’s 9:00 AM client review. Need to verify slide 7.’" aria-label="Enter a local ContextOS input" />
+                <input ref={documentInputRef} className="visually-hidden" type="file" accept=".txt,.md,.csv,.json,.pdf,image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleDocument(file); event.currentTarget.value = ""; }} />
+                {cameraOpen && <div className="camera-capture"><video ref={videoRef} muted playsInline aria-label="Live camera preview" /><div><button onClick={captureCameraFrame}>Capture frame</button><button onClick={closeCamera}>Close camera</button></div></div>}
+                {cameraPreview && <div className="camera-preview"><img src={cameraPreview} alt="Captured browser camera frame" /><span>Frame stays in this browser session.</span></div>}
+                <div className="capture-tools" aria-label="Capture from browser"><button onClick={() => setCaptureSource("NOTE")} className={captureSource === "NOTE" ? "active" : ""}><Sparkles size={13} />Note</button><button onClick={startVoiceCapture} className={captureSource === "VOICE" ? "active" : ""}><Mic size={13} />Voice</button><button onClick={() => documentInputRef.current?.click()} className={captureSource === "DOCUMENT" ? "active" : ""}><FileText size={13} />Document</button><button onClick={() => void openCamera()} className={captureSource === "CAMERA" ? "active" : ""}><Camera size={13} />Camera</button></div>
+                <div className="capture-status" aria-live="polite">{captureStatus}</div>
+                <div className="capture-actions"><span className="capture-privacy">Voice uses your browser’s speech provider; strict offline voice is available in the Android app.</span><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div>
+              </div>
               <div className="stage-top"><div><span className="micro-label">NOW IN FOCUS</span><h3>{activeMemory.label}</h3></div><span className="stage-status" style={{ color: activeMemory.color }}><i style={{ backgroundColor: activeMemory.color }} /> {activeMemory.status}</span></div>
               <div className="memory-graph" style={{ "--memory-color": activeMemory.color } as CSSProperties}>
-                <div className="graph-spoke spoke-a" /><div className="graph-spoke spoke-b" /><div className="graph-spoke spoke-c" /><div className="graph-spoke spoke-d" />
-                {activeMemory.nodes.map((node, index) => <span key={node} className={`memory-node memory-node-${index}`}>{node}</span>)}
+                <svg className="graph-connections" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <line key={`core-${node}`} x1="50" y1="50" x2={point.x} y2={point.y} />; })}
+                  {activeMemory.nodes.slice(1).map((node, index) => { const first = graphPositions[index % graphPositions.length]; const next = graphPositions[(index + 1) % graphPositions.length]; return <line key={`relation-${node}`} className="graph-link-secondary" x1={first.x} y1={first.y} x2={next.x} y2={next.y} />; })}
+                </svg>
+                {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <button key={node} className={selectedNode === node ? "memory-node selected" : "memory-node"} style={{ "--node-x": `${point.x}%`, "--node-y": `${point.y}%` } as CSSProperties} onClick={() => setSelectedNode(node)}>{node}</button>; })}
                 <div className="memory-core"><Network size={17} /><span>CONTEXT<br />GRAPH</span></div>
+                <div className="graph-inspector"><span className="micro-label">SELECTED LINK</span><strong>{selectedNode ?? activeMemory.nodes[0]} <i>→</i> {activeMemory.label}</strong></div>
               </div>
               <div className="memory-evidence"><div><span className="micro-label">EVIDENCE</span><strong>{activeMemory.source}</strong></div><div><span className="micro-label">RELATIONSHIP</span><strong>{activeMemory.relationship}</strong></div><div><span className="micro-label">CONFIDENCE</span><strong>{activeMemory.confidence}</strong></div></div>
               <div className="memory-ledger"><div className="ledger-source"><span className="micro-label">CAPTURED INPUT</span><p>{activeMemory.raw}</p></div><div className="ledger-details"><span className="micro-label">EXTRACTED LOCALLY</span>{activeMemory.details.map((detail) => <span key={detail}>{detail}</span>)}</div></div>

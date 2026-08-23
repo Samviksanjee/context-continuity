@@ -68,6 +68,9 @@ export default function Home() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraPreview, setCameraPreview] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMicrophoneId, setSelectedMicrophoneId] = useState("");
+  const [isDiscoveringMicrophones, setIsDiscoveringMicrophones] = useState(false);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const active = layers.find((layer) => layer.key === activeLayer) ?? layers[1];
@@ -85,6 +88,38 @@ export default function Home() {
   }, [cameraOpen, cameraStream]);
 
   useEffect(() => () => { cameraStream?.getTracks().forEach((track) => track.stop()); }, [cameraStream]);
+
+  useEffect(() => {
+    const refreshOnDeviceChange = () => { void refreshMicrophones(); };
+    navigator.mediaDevices?.addEventListener?.("devicechange", refreshOnDeviceChange);
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", refreshOnDeviceChange);
+  }, []);
+
+  async function refreshMicrophones() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
+    setMicrophones(inputs);
+    setSelectedMicrophoneId((current) => current && inputs.some((device) => device.deviceId === current) ? current : (inputs[0]?.deviceId ?? ""));
+  }
+
+  async function discoverMicrophones() {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setCaptureStatus("Microphone discovery needs a secure HTTPS page and a modern browser with microphone support.");
+      return;
+    }
+    setIsDiscoveringMicrophones(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      await refreshMicrophones();
+      setCaptureStatus("Microphones detected. Choose one, then start voice capture.");
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : "UnknownError";
+      setCaptureStatus(name === "NotAllowedError" ? "Microphone access is blocked. Allow Microphone from the address-bar lock menu, then detect inputs again." : `Could not detect microphone inputs (${name}). Check your device connection and retry.`);
+    } finally {
+      setIsDiscoveringMicrophones(false);
+    }
+  }
 
   function addLiveContext() {
     if (!userInput.trim()) return;
@@ -114,8 +149,9 @@ export default function Home() {
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: selectedMicrophoneId ? { exact: selectedMicrophoneId } : undefined, echoCancellation: true, noiseSuppression: true } });
       stream.getTracks().forEach((track) => track.stop());
+      await refreshMicrophones();
     } catch (error) {
       const name = error instanceof DOMException ? error.name : "UnknownError";
       const message = name === "NotAllowedError"
@@ -132,7 +168,11 @@ export default function Home() {
     recognition.lang = navigator.language || "en-US";
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.onstart = () => { setIsListening(true); setCaptureStatus("Listening now. Speak a short context note, then pause."); };
+    recognition.onstart = () => {
+      const selectedLabel = microphones.find((device) => device.deviceId === selectedMicrophoneId)?.label;
+      setIsListening(true);
+      setCaptureStatus(`Listening now${selectedLabel ? ` through ${selectedLabel}` : ""}. Speak a short context note, then pause.`);
+    };
     recognition.onresult = (event) => {
       const transcript = event.results[0]?.[0]?.transcript?.trim() ?? "";
       if (transcript) {
@@ -287,6 +327,8 @@ export default function Home() {
                 {cameraOpen && <div className="camera-capture"><video ref={videoRef} muted playsInline aria-label="Live camera preview" /><div><button onClick={captureCameraFrame}>Capture frame</button><button onClick={closeCamera}>Close camera</button></div></div>}
                 {cameraPreview && <div className="camera-preview"><img src={cameraPreview} alt="Captured browser camera frame" /><span>Frame stays in this browser session.</span></div>}
                 <div className="capture-tools" aria-label="Capture from browser"><button onClick={() => setCaptureSource("NOTE")} className={captureSource === "NOTE" ? "active" : ""}><Sparkles size={13} />Note</button><button onClick={() => void startVoiceCapture()} className={captureSource === "VOICE" ? "active" : ""} disabled={isListening}>{isListening ? <ScanLine size={13} /> : <Mic size={13} />}{isListening ? "Listening" : "Voice"}</button><button onClick={() => documentInputRef.current?.click()} className={captureSource === "DOCUMENT" ? "active" : ""}><FileText size={13} />Document</button><button onClick={() => void openCamera()} className={captureSource === "CAMERA" ? "active" : ""}><Camera size={13} />Camera</button></div>
+                <div className="microphone-picker"><div><span className="microphone-picker-label">VOICE INPUT</span><select value={selectedMicrophoneId} onChange={(event) => setSelectedMicrophoneId(event.target.value)} disabled={!microphones.length || isListening} aria-label="Preferred microphone input"><option value="">{microphones.length ? "Browser default microphone" : "Detect microphones first"}</option>{microphones.map((device, index) => <option key={`${device.deviceId}-${index}`} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}</select></div><button onClick={() => void discoverMicrophones()} disabled={isDiscoveringMicrophones || isListening}>{isDiscoveringMicrophones ? "CHECKING…" : "DETECT INPUTS"}</button></div>
+                {isListening && <div className="audio-wave" role="status" aria-label="Microphone active; listening for a context note"><span /><span /><span /><span /><span /><span /><span /><span /><em>MIC ACTIVE</em></div>}
                 <div className="capture-status" aria-live="polite">{captureStatus}</div>
                 <div className="capture-actions"><span className="capture-privacy">Voice uses your browser’s speech provider; strict offline voice is available in the Android app.</span><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div>
               </div>

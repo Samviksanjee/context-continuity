@@ -18,3 +18,6 @@
 - [x] Validate and publish the enhanced capture-and-graph experience.
 - [x] Fix duplicate React keys in the dynamic graph and verify the console.
 - [x] Add microphone preflight checks and actionable voice-capture recovery guidance.
+- [x] Add a browser microphone-device selector after permission is granted.
+- [x] Render a responsive live audio-wave indicator during voice capture.
+- [x] Validate and publish the enhanced voice interface.

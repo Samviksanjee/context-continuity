@@ -53,3 +53,13 @@ data class Extraction(
   val suggestion: String,
   val explanation: String,
 )
+
+data class ContextQueryResult(
+  val query: String,
+  val answer: String,
+  val confidence: Int,
+  val matchedThreadId: String? = null,
+  val matchedThreadLabel: String? = null,
+  val provenance: List<String> = emptyList(),
+  val explanation: String,
+)

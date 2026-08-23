@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ai.contextos.core.ContextQueryResult
 import ai.contextos.core.ContextThread
 import ai.contextos.core.ThreadState
 
@@ -80,8 +81,10 @@ private fun ContextOsScreen(viewModel: ContextViewModel) {
   val state by viewModel.state.collectAsStateWithLifecycle()
   val photoCapture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap: Bitmap? -> bitmap?.let(viewModel::captureBitmap) }
   val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> uri?.let(viewModel::captureDocument) }
-  val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) viewModel.captureVoice() }
+  var voiceQueryMode by remember { mutableStateOf(false) }
+  val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) { if (voiceQueryMode) viewModel.queryByVoice() else viewModel.captureVoice() } }
   var note by remember { mutableStateOf("") }
+  var question by remember { mutableStateOf("") }
   val selected = state.threads.firstOrNull { it.id == state.selectedId } ?: state.threads.firstOrNull()
 
   Scaffold(topBar = { TopAppBar(title = { Text("CONTEXT / OS", fontWeight = FontWeight.Bold, letterSpacing = 2.sp) }) }) { padding ->
@@ -95,7 +98,7 @@ private fun ContextOsScreen(viewModel: ContextViewModel) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Button(onClick = { photoCapture.launch(null) }, enabled = !state.isWorking) { Text("Capture image") }
           OutlinedButton(onClick = { documentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain")) }, enabled = !state.isWorking) { Text("Add document") }
-          OutlinedButton(onClick = { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }, enabled = !state.isWorking) { Text("Voice note") }
+          OutlinedButton(onClick = { voiceQueryMode = false; microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }, enabled = !state.isWorking) { Text("Voice note") }
         }
       }
       item {
@@ -106,6 +109,23 @@ private fun ContextOsScreen(viewModel: ContextViewModel) {
           OutlinedButton(onClick = viewModel::seedDemo, enabled = state.threads.isEmpty() && !state.isWorking) { Text("Try local demo") }
         }
       }
+      item {
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFF1EEE5)), shape = RoundedCornerShape(8.dp)) {
+          Column(Modifier.padding(14.dp)) {
+            Text("ASK YOUR LOCAL CONTEXT", fontSize = 11.sp, color = Color(0xFFD95528), fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(Modifier.height(5.dp))
+            Text("Ask about people, timing, tasks, or the next step. Answers come only from evidence already saved on this phone.", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(9.dp))
+            OutlinedTextField(value = question, onValueChange = { question = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Context question") }, placeholder = { Text("What should I do next for the client review?") })
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              Button(onClick = { viewModel.queryContext(question); question = "" }, enabled = question.isNotBlank() && !state.isWorking) { Text("Ask locally") }
+              OutlinedButton(onClick = { voiceQueryMode = true; microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }, enabled = !state.isWorking) { Text("Ask by voice") }
+            }
+          }
+        }
+      }
+      state.queryResult?.let { result -> item { QueryAnswer(result) } }
       if (state.threads.isNotEmpty()) {
         item { Text("Your context threads", fontSize = 19.sp, fontWeight = FontWeight.Bold) }
         items(state.threads, key = { it.id }) { thread -> ThreadRow(thread, selected?.id == thread.id, onClick = { viewModel.select(thread.id) }) }
@@ -150,6 +170,23 @@ private fun ThreadDetail(thread: ContextThread, onForget: () -> Unit) {
       thread.evidence.takeLast(4).forEach { evidence -> Text("${evidence.source.name.replace('_', ' ')} · ${evidence.summary.take(110)}", color = Color(0xFFE2E8E4), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 5.dp)) }
       if (thread.tasks.isNotEmpty()) { Spacer(Modifier.height(12.dp)); Text("TASKS", color = Color(0xFFFFA178), fontSize = 11.sp); thread.tasks.forEach { task -> Text("• ${task.title}", color = Color.White) } }
       Spacer(Modifier.height(14.dp)); OutlinedButton(onClick = onForget) { Text("Forget this local context") }
+    }
+  }
+}
+
+@Composable
+private fun QueryAnswer(result: ContextQueryResult) {
+  Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1D2724)), shape = RoundedCornerShape(8.dp)) {
+    Column(Modifier.padding(16.dp)) {
+      Text("LOCAL GRAPH ANSWER", color = Color(0xFFFFA178), fontSize = 11.sp, letterSpacing = 1.sp)
+      Spacer(Modifier.height(7.dp)); Text("“${result.query}”", color = Color(0xFFBAC5BF), style = MaterialTheme.typography.bodySmall)
+      Spacer(Modifier.height(7.dp)); Text(result.answer, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+      Spacer(Modifier.height(12.dp)); Text("MATCH: ${result.matchedThreadLabel ?: "NO LOCAL MATCH"} · ${result.confidence}%", color = Color(0xFFFFA178), fontSize = 10.sp, letterSpacing = .6.sp)
+      Spacer(Modifier.height(11.dp)); Text("WHY", color = Color(0xFFBAC5BF), fontSize = 11.sp); Text(result.explanation, color = Color.White, style = MaterialTheme.typography.bodySmall)
+      if (result.provenance.isNotEmpty()) {
+        Spacer(Modifier.height(11.dp)); Text("LOCAL PROVENANCE", color = Color(0xFFFFA178), fontSize = 11.sp)
+        result.provenance.forEach { source -> Text("• $source", color = Color(0xFFE2E8E4), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp)) }
+      }
     }
   }
 }

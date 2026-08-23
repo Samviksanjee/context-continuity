@@ -11,6 +11,7 @@ The project is deliberately a standalone Android application, not a modified iQO
 | Image/PDF OCR | Yes, through user-selected input or camera capture | ML Kit on-device OCR |
 | Voice note | Yes, after microphone permission and only when Android reports an on-device recognizer is available | Android `createOnDeviceSpeechRecognizer`; no remote fallback |
 | Local graph matching | Yes | Kotlin deterministic rule engine |
+| Natural-language graph query | Yes, in text or through on-device voice when available | Local thread, evidence, task, and relationship matching with visible provenance |
 | Explainable suggestion and provenance | Yes | App process |
 | Forget / full local deletion | Thread-level forget is included; settings wipe is documented as the next UI addition | App-private encrypted storage |
 | Local foundation-model enrichment | Interface-ready, but model provisioning is intentionally not bundled | AICore/ML Kit GenAI or LiteRT-LM, device dependent |
@@ -22,11 +23,11 @@ Open `android-contextos` in Android Studio (Ladybug or newer) with an installed 
 
 ```bash
 cd android-contextos
-./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-This repository ships the Gradle wrapper, so `./gradlew :app:assembleDebug` is the preferred build command. Large model weights are intentionally not included. A custom LiteRT-LM model must be provisioned locally by the user or device vendor; it must never be fetched by the ContextOS app at runtime when operating in strict local-only mode.
+This repository ships the Gradle wrapper, so `./gradlew :app:testDebugUnitTest :app:assembleDebug` is the preferred validation and build command. The local engine has five automated unit tests covering work, home, environmental-text handling, provenance-bound query matching, and next-step query behavior. Large model weights are intentionally not included. A custom LiteRT-LM model must be provisioned locally by the user or device vendor; it must never be fetched by the ContextOS app at runtime when operating in strict local-only mode.
 
 ## Architecture
 
@@ -48,6 +49,11 @@ Local graph repository
 Visible recommendation
   ├── source and explanation shown
   └── user can forget the thread
+
+Local question
+  ├── typed or on-device voice query
+  ├── matches saved local thread, evidence, tasks, and relations
+  └── returns answer + provenance; never invokes an action
 ```
 
 The encryption key is generated in Android Keystore and is non-exportable from the application process. The data file remains in internal app storage and Android backup is disabled. Android Keystore supports non-exportable key material and can bind supported keys to device secure hardware where available.[2]

@@ -8,3 +8,8 @@
 - [x] Define the standalone on-device Android prototype boundary and OEM integration requirements.
 - [x] Build the local-only ContextOS prototype package and privacy controls.
 - [x] Validate the prototype and publish the implementation guidance.
+- [x] Turn the web demo into a live user-input context workspace.
+- [x] Add offline natural-language graph queries to the Android voice path.
+- [x] Package and validate the reusable ContextOS implementation skill.
+- [x] Write the iQOO/vivo platform integration pitch outline and speaker script.
+- [ ] Validate and publish the expanded ContextOS package.

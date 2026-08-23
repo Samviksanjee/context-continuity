@@ -82,6 +82,8 @@ class ContextRepository(private val appContext: Context) {
     store.write(_threads.value)
   }
 
+  fun queryLocal(query: String): ContextQueryResult = LocalContextQueryEngine.answer(query, _threads.value)
+
   suspend fun seedLocalDemo() {
     if (_threads.value.isNotEmpty()) return
     ingest("Client review tomorrow at 9:00 AM. Aisha will add approved Q2 budget figures. Need to review slide 7.", EvidenceSource.SAMPLE)
@@ -133,6 +135,54 @@ object ContextMatcher {
     val threadTokens = LocalRuleExtractor.tokenize(thread.label + " " + thread.evidence.joinToString(" ") { it.summary })
     if (threadTokens.isEmpty() || extraction.tokens.isEmpty()) return 0.0
     return threadTokens.intersect(extraction.tokens).size.toDouble() / extraction.tokens.size.toDouble()
+  }
+}
+
+/** Answers strictly from saved local records; evidence text remains data and has no action authority. */
+object LocalContextQueryEngine {
+  private val queryStopWords = setOf("what", "when", "where", "which", "who", "should", "could", "would", "about", "tell", "show", "give", "does", "have", "with", "this", "that", "your", "from", "next")
+  private val timePattern = Regex("(?i)tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\b\\d{1,2}:\\d{2}\\b|\\b\\d{1,2}\\s?(?:am|pm)\\b")
+
+  fun answer(query: String, threads: List<ContextThread>): ContextQueryResult {
+    val clean = query.trim()
+    if (clean.isBlank()) return ContextQueryResult(query, "Ask a question about a context you captured on this phone.", 0, explanation = "No query was provided.")
+    if (threads.isEmpty()) return ContextQueryResult(clean, "There is no local context yet. Add a note, document, image, or voice note before asking a question.", 0, explanation = "The local graph is empty.")
+
+    val lower = clean.lowercase()
+    val actionQuestion = listOf("what should", "what do i", "what's next", "what is next", "next step", "priority").any(lower::contains)
+    val queryTokens = LocalRuleExtractor.tokenize(clean).filterNot { it in queryStopWords }.toSet()
+    val active = threads.firstOrNull { it.state == ThreadState.ACTIVE }
+    val scored = threads.map { thread -> thread to score(thread, queryTokens) }
+    val bestPair = if (actionQuestion && active != null) active to score(active, queryTokens) else scored.maxByOrNull { it.second } ?: (threads.first() to 0.0)
+    val thread = bestPair.first
+    val score = bestPair.second
+    if (!actionQuestion && queryTokens.isNotEmpty() && score <= 0.0) {
+      return ContextQueryResult(clean, "I could not match that question to a saved local thread. Try naming a project, person, place, or time from your captures.", 0, explanation = "No local entity or evidence token overlapped with the question.")
+    }
+
+    val evidenceText = thread.evidence.joinToString(" ") { it.summary }
+    val answer = when {
+      actionQuestion -> thread.suggestion
+      lower.contains("who") && thread.relations.isNotEmpty() -> thread.relations.take(3).joinToString("; ") { "${it.subject} ${it.predicate} ${it.`object`}" }
+      lower.contains("when") || lower.contains("time") || lower.contains("date") -> timePattern.findAll(evidenceText).map { it.value }.toList().distinct().take(4).let { times -> if (times.isEmpty()) "I found the ${thread.label} thread, but it does not yet contain a saved date or time." else "For ${thread.label}, the local evidence mentions: ${times.joinToString(", ")}." }
+      lower.contains("task") || lower.contains("need") -> thread.tasks.take(4).joinToString("; ") { it.title }.ifBlank { "The ${thread.label} thread has no explicit saved task yet." }
+      else -> "${thread.label}: ${thread.evidence.lastOrNull()?.summary ?: "No evidence summary is available."}"
+    }
+    val provenance = thread.evidence.takeLast(3).map { "${it.source.name.replace('_', ' ')} · ${it.summary.take(92)}" }
+    val confidence = if (actionQuestion) 88 else (70 + (score * 25).toInt()).coerceIn(70, 95)
+    return ContextQueryResult(clean, answer, confidence, thread.id, thread.label, provenance, "Matched ${thread.label} using local labels, evidence, tasks, and relationships. The response is generated only from saved local records.")
+  }
+
+  private fun score(thread: ContextThread, queryTokens: Set<String>): Double {
+    if (queryTokens.isEmpty()) return 0.0
+    val graphText = buildString {
+      append(thread.label).append(' ')
+      thread.evidence.forEach { append(it.summary).append(' ') }
+      thread.tasks.forEach { append(it.title).append(' ') }
+      thread.relations.forEach { append(it.subject).append(' ').append(it.predicate).append(' ').append(it.`object`).append(' ') }
+    }
+    val graphTokens = LocalRuleExtractor.tokenize(graphText)
+    return graphTokens.intersect(queryTokens).size.toDouble() / queryTokens.size.toDouble()
   }
 }
 

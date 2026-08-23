@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.contextos.core.ContextRepository
+import ai.contextos.core.ContextQueryResult
 import ai.contextos.core.ContextThread
 import ai.contextos.core.EvidenceSource
 import ai.contextos.core.OnDeviceCapture
@@ -22,6 +23,7 @@ data class ContextUiState(
   val selectedId: String? = null,
   val isWorking: Boolean = false,
   val message: String = "No network permission. Your context stays in this app on this phone.",
+  val queryResult: ContextQueryResult? = null,
 )
 
 class ContextViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,6 +52,21 @@ class ContextViewModel(application: Application) : AndroidViewModel(application)
     voice.start(
       onResult = { transcript -> ingest(transcript, EvidenceSource.VOICE) },
       onFailure = ::failed,
+    )
+  }
+
+  fun queryByVoice() {
+    working("Listening for an offline context question…")
+    voice.start(onResult = ::queryContext, onFailure = ::failed)
+  }
+
+  fun queryContext(query: String) {
+    val result = repository.queryLocal(query)
+    _state.value = _state.value.copy(
+      isWorking = false,
+      queryResult = result,
+      selectedId = result.matchedThreadId ?: _state.value.selectedId,
+      message = "Answered locally from your saved context graph. No network request was made.",
     )
   }
 

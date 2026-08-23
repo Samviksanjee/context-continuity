@@ -9,11 +9,11 @@ cd android-contextos
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
 
-The build completed with three local context-engine tests passing and no test failures. The generated APK is `android-contextos/app/build/outputs/apk/debug/app-debug.apk`.
+The build completed with five local context-engine tests passing and no test failures. The generated APK is `android-contextos/app/build/outputs/apk/debug/app-debug.apk`.
 
 | Verification | Observed result |
 |---|---|
-| Unit tests | 3 tests, 0 failures, 0 errors. |
+| Unit tests | 5 tests, 0 failures, 0 errors. |
 | APK package | `ai.contextos` |
 | Declared permissions | `RECORD_AUDIO` only, plus the Android-generated non-exported receiver permission. |
 | Internet permission | Not declared; transitive Internet and network-state declarations are removed at manifest merge. |
@@ -28,6 +28,8 @@ adb install -r android-contextos/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Open **ContextOS**. Create a note, share a short text snippet into the app, or select a document. The app will create a local context, show the evidence that supports it, and make a local suggestion. Use **Forget this local context** to remove the selected thread from the encrypted app-private store.
+
+Use **Ask your local context** to type a question such as “When is the client review?” or “What should I do next?” The answer card identifies the matched thread, confidence, source evidence, and a plain-language explanation. The voice query path uses the same on-device recognizer policy as voice capture and fails closed if local recognition is unavailable.
 
 > The voice button requests microphone permission only after the user selects it. It uses `createOnDeviceSpeechRecognizer` and fails closed if the device does not report local recognition availability. It does not call the ordinary speech-recognition factory because the ordinary API may stream audio to a remote service.[1]
 

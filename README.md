@@ -68,7 +68,9 @@ context-continuity/
 ├── docs/
 │   ├── ARCHITECTURE.md             # Product and technical reference
 │   ├── DEMO_GUIDE.md               # Memory-switching interaction walkthrough
-│   └── DEVELOPMENT.md               # Local workflow, validation, and deployment notes
+│   ├── DEVELOPMENT.md               # Local workflow, validation, and deployment notes
+│   ├── ANDROID_DEPLOYMENT.md        # Native test-device and OEM deployment guidance
+│   └── IQOO_VIVO_PLATFORM_PITCH.md  # Platform-team presenter script and pitch narrative
 ├── android-contextos/               # Native local-only Android MVP
 │   ├── app/                         # Compose UI, local graph engine, capture, and tests
 │   └── README.md                    # APK build/install and security contract

@@ -1,6 +1,6 @@
 /* Signal Atlas: editorial systems design, warm paper + ink + signal orange, asymmetric narrative layouts. */
 import { useState, type CSSProperties } from "react";
-import { ArrowDownRight, ArrowUpRight, ChevronRight, CircleHelp, LockKeyhole, Menu, MoveRight, Network, Play, ScanLine, Sparkles, Timer, X } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Camera, ChevronRight, CircleHelp, FileText, LockKeyhole, Menu, Mic, MoveRight, Network, Play, ScanLine, Send, Sparkles, Timer, X } from "lucide-react";
 
 const layers = [
   { key: "perceive", label: "01 / Perceive", title: "Notice what is happening", copy: "Camera, screen, voice and documents become structured signals — without asking you to narrate the obvious.", icon: ScanLine, color: "#DDE8E2" },
@@ -17,11 +17,30 @@ const moments = [
   ["FRI", "State reconstructed", "“You’re missing the prototype demo.”"],
 ];
 
-const memorySpaces = [
-  { key: "work-review", label: "Tomorrow’s client review", cue: "Calendar + slide draft + chat", status: "ACTIVE THREAD", color: "#F26B3A", source: "Q2_client_review.pptx", relationship: "Aisha → budget slide", memory: "Slide 7 is still missing the approved Q2 numbers for tomorrow’s 9:00 AM review.", why: "The calendar invite, shared slide draft, and Aisha’s message all point to the same client review. The deadline is within 18 hours.", action: "Why this is in focus", confidence: "94%", nodes: ["Calendar", "Slides", "Aisha", "Finance", "Client"] },
-  { key: "move-in", label: "New flat move-in", cue: "Lease + delivery + landlord chat", status: "PAUSED THREAD", color: "#799E92", source: "IKEA_delivery_9821.pdf", relationship: "Key handover → 2:00 PM", memory: "Your bed delivery overlaps with the key handover on Saturday afternoon.", why: "The lease confirmation, furniture delivery window, and landlord chat share the same address and Saturday date.", action: "Why this is in focus", confidence: "91%", nodes: ["Lease", "Keys", "Delivery", "Landlord", "Address"] },
-  { key: "weekend-trip", label: "Mysuru weekend train", cue: "E-ticket + maps + family chat", status: "BACKGROUND THREAD", color: "#7998B6", source: "IRCTC_eTicket_8843.pdf", relationship: "Cab pickup → 6:10 AM", memory: "Leave home 30 minutes earlier: rain is forecast before your train to Mysuru.", why: "The train e-ticket, saved station route, and family chat reference the same Saturday-morning departure.", action: "Why this is in focus", confidence: "87%", nodes: ["Train", "Cab", "Weather", "Family", "Station"] },
+type CaptureSource = "NOTE" | "VOICE" | "DOCUMENT" | "CAMERA";
+type MemorySpace = {
+  key: string; label: string; cue: string; status: string; color: string; source: string; relationship: string; memory: string; why: string; action: string; confidence: string; nodes: string[]; raw: string; details: string[]; sourceKind: CaptureSource;
+};
+
+const memorySpaces: MemorySpace[] = [
+  { key: "work-review", label: "Tomorrow’s client review", cue: "Calendar + slide draft + chat", status: "ACTIVE THREAD", color: "#F26B3A", source: "Q2_client_review.pptx", relationship: "Aisha → budget slide", memory: "Slide 7 is still missing the approved Q2 numbers for tomorrow’s 9:00 AM review.", why: "The calendar invite, shared slide draft, and Aisha’s message all point to the same client review. The deadline is within 18 hours.", action: "Why this is in focus", confidence: "94%", nodes: ["Calendar", "Slides", "Aisha", "Finance", "Client"], raw: "Client review tomorrow at 9:00 AM. Aisha will add approved Q2 budget figures. Need to review slide 7.", details: ["Event: client review", "Time: tomorrow, 9:00 AM", "Person: Aisha", "Task: review slide 7"], sourceKind: "DOCUMENT" },
+  { key: "move-in", label: "New flat move-in", cue: "Lease + delivery + landlord chat", status: "PAUSED THREAD", color: "#799E92", source: "IKEA_delivery_9821.pdf", relationship: "Key handover → 2:00 PM", memory: "Your bed delivery overlaps with the key handover on Saturday afternoon.", why: "The lease confirmation, furniture delivery window, and landlord chat share the same address and Saturday date.", action: "Why this is in focus", confidence: "91%", nodes: ["Lease", "Keys", "Delivery", "Landlord", "Address"], raw: "The landlord will hand over keys at 2 PM on Saturday. Furniture delivery is scheduled between 1 PM and 4 PM.", details: ["Event: move-in", "Time: Saturday, 2:00 PM", "Person: landlord", "Conflict: delivery window"], sourceKind: "DOCUMENT" },
+  { key: "weekend-trip", label: "Mysuru weekend train", cue: "E-ticket + maps + family chat", status: "BACKGROUND THREAD", color: "#7998B6", source: "IRCTC_eTicket_8843.pdf", relationship: "Cab pickup → 6:10 AM", memory: "Leave home 30 minutes earlier: rain is forecast before your train to Mysuru.", why: "The train e-ticket, saved station route, and family chat reference the same Saturday-morning departure.", action: "Why this is in focus", confidence: "87%", nodes: ["Train", "Cab", "Weather", "Family", "Station"], raw: "Mysuru train leaves Saturday at 6:40 AM. Book a cab; rain is expected before departure.", details: ["Event: weekend train", "Time: Saturday, 6:40 AM", "Place: station", "Task: book a cab"], sourceKind: "DOCUMENT" },
 ];
+
+function createMemory(text: string, sourceKind: CaptureSource): MemorySpace {
+  const value = text.trim();
+  const lower = value.toLowerCase();
+  const label = lower.includes("review") || lower.includes("client") || lower.includes("slide") ? "Client review" : lower.includes("move") || lower.includes("lease") || lower.includes("landlord") ? "Move-in" : lower.includes("train") || lower.includes("trip") || lower.includes("ticket") ? "Weekend trip" : value.split(/[.!\n]/)[0].slice(0, 34) || "New context";
+  const people = Array.from(new Set(value.match(/\b[A-Z][a-z]{2,}\b/g) ?? [])).slice(0, 2);
+  const time = value.match(/\b(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}:\d{2})\b/gi) ?? [];
+  const task = value.match(/(?:need to|must|todo|task|should)\s*[:\-]?\s*([^.!\n]{3,72})/i)?.[1]?.trim();
+  const keywords = Array.from(new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 3 && !["this", "that", "with", "from", "will", "have", "your", "they"].includes(word)))).slice(0, 4);
+  const nodes = [...people, ...keywords.map((word) => word.replace(/^./, (char) => char.toUpperCase())), "Evidence"].slice(0, 5);
+  const details = [`Source: ${sourceKind.toLowerCase()} · user initiated`, `Context: ${label}`, ...(people.length ? [`People: ${people.join(", ")}`] : []), ...(time.length ? [`Time: ${time.join(", ")}`] : []), ...(task ? [`Task: ${task}`] : []), `Stored: this browser session only`];
+  const suggestion = task ? `Your captured task is “${task}”. Review it before ContextOS suggests an action.` : time.length ? `This looks time-sensitive (${time.join(", ")}). Add one more source or a task to strengthen the context.` : "I captured the context locally. Add a person, time, or task if you want a stronger recommendation.";
+  return { key: `capture-${Date.now()}`, label, cue: `${sourceKind.toLowerCase()} · live capture`, status: "LIVE THREAD", color: "#F26B3A", source: `${sourceKind.toLowerCase()} / user input`, relationship: `Input → ${label}`, memory: suggestion, why: `ContextOS parsed this only from the text you entered. It found ${people.length ? people.join(", ") : "no named people"}${time.length ? ` and ${time.join(", ")}` : ""}. The source remains evidence, not an instruction.`, action: "Inspect local evidence", confidence: `${Math.max(72, 96 - Math.max(0, 3 - details.length) * 6)}%`, nodes: nodes.length ? nodes : ["Input", "Evidence", "Context"], raw: value, details, sourceKind };
+}
 
 function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -32,8 +51,21 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeMemoryKey, setActiveMemoryKey] = useState("work-review");
   const [showEvidence, setShowEvidence] = useState(false);
+  const [userInput, setUserInput] = useState("");
+  const [captureSource, setCaptureSource] = useState<CaptureSource>("NOTE");
+  const [liveMemories, setLiveMemories] = useState<MemorySpace[]>([]);
   const active = layers.find((layer) => layer.key === activeLayer) ?? layers[1];
-  const activeMemory = memorySpaces.find((memory) => memory.key === activeMemoryKey) ?? memorySpaces[0];
+  const allMemories = [...liveMemories, ...memorySpaces];
+  const activeMemory = allMemories.find((memory) => memory.key === activeMemoryKey) ?? allMemories[0];
+
+  function addLiveContext() {
+    if (!userInput.trim()) return;
+    const captured = createMemory(userInput, captureSource);
+    setLiveMemories((current) => [captured, ...current]);
+    setActiveMemoryKey(captured.key);
+    setShowEvidence(true);
+    setUserInput("");
+  }
 
   return (
     <div className="site-shell">
@@ -96,14 +128,15 @@ export default function Home() {
         </section>
 
         <section id="memory-demo" className="memory-demo section-pad" aria-labelledby="memory-demo-heading">
-          <div className="memory-demo-head"><div><div className="section-kicker">03 / Interactive demo</div><h2 id="memory-demo-heading">Switch the memory.<br /><em>Keep the meaning.</em></h2></div><p>On a normal weekday, a phone may hold a work review, a move-in, and a family trip at once. The useful behavior is not remembering more — it is keeping each thread separate and bringing the right one forward.</p></div>
+          <div className="memory-demo-head"><div><div className="section-kicker">03 / Live local demo</div><h2 id="memory-demo-heading">Give it a moment.<br /><em>See the meaning.</em></h2></div><p>Enter a note, spoken outcome, document excerpt, or camera observation. The demo turns it into a visible context thread: its source, entities, timing, task cues, graph nodes, and a permission-based suggestion all remain in this browser session.</p></div>
           <div className="memory-workbench">
             <div className="memory-selector" role="tablist" aria-label="Choose a context thread">
               <span className="micro-label">AVAILABLE CONTEXTS</span>
-              {memorySpaces.map((memory, index) => <button key={memory.key} role="tab" aria-selected={activeMemory.key === memory.key} className={activeMemory.key === memory.key ? "memory-choice active" : "memory-choice"} onClick={() => { setActiveMemoryKey(memory.key); setShowEvidence(false); }}><span className="choice-index">0{index + 1}</span><span className="choice-copy"><strong>{memory.label}</strong><small>{memory.cue}</small></span><span className="choice-status" style={{ backgroundColor: memory.color }} /></button>)}
+              {allMemories.map((memory, index) => <button key={memory.key} role="tab" aria-selected={activeMemory.key === memory.key} className={activeMemory.key === memory.key ? "memory-choice active" : "memory-choice"} onClick={() => { setActiveMemoryKey(memory.key); setShowEvidence(false); }}><span className="choice-index">0{index + 1}</span><span className="choice-copy"><strong>{memory.label}</strong><small>{memory.cue}</small></span><span className="choice-status" style={{ backgroundColor: memory.color }} /></button>)}
               <div className="selector-note"><span className="signal-dot" /> Only the active thread can shape the next suggestion.</div>
             </div>
             <div className="memory-stage" role="tabpanel" aria-live="polite" aria-label={`${activeMemory.label} context details`}>
+              <div className="capture-console"><div className="capture-console-head"><span className="micro-label">TRY CONTEXTOS / NO CLOUD</span><span>Browser-memory demo</span></div><textarea value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="Try: ‘Aisha will update the budget slide before tomorrow’s 9:00 AM client review. Need to verify slide 7.’" aria-label="Enter a local ContextOS input" /><div className="capture-actions"><div className="source-switch" aria-label="Choose the evidence source">{(["NOTE", "VOICE", "DOCUMENT", "CAMERA"] as CaptureSource[]).map((source) => <button key={source} className={captureSource === source ? "active" : ""} onClick={() => setCaptureSource(source)}>{source === "VOICE" ? <Mic size={12} /> : source === "DOCUMENT" ? <FileText size={12} /> : source === "CAMERA" ? <Camera size={12} /> : <Sparkles size={12} />}{source}</button>)}</div><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div></div>
               <div className="stage-top"><div><span className="micro-label">NOW IN FOCUS</span><h3>{activeMemory.label}</h3></div><span className="stage-status" style={{ color: activeMemory.color }}><i style={{ backgroundColor: activeMemory.color }} /> {activeMemory.status}</span></div>
               <div className="memory-graph" style={{ "--memory-color": activeMemory.color } as CSSProperties}>
                 <div className="graph-spoke spoke-a" /><div className="graph-spoke spoke-b" /><div className="graph-spoke spoke-c" /><div className="graph-spoke spoke-d" />
@@ -111,6 +144,7 @@ export default function Home() {
                 <div className="memory-core"><Network size={17} /><span>CONTEXT<br />GRAPH</span></div>
               </div>
               <div className="memory-evidence"><div><span className="micro-label">EVIDENCE</span><strong>{activeMemory.source}</strong></div><div><span className="micro-label">RELATIONSHIP</span><strong>{activeMemory.relationship}</strong></div><div><span className="micro-label">CONFIDENCE</span><strong>{activeMemory.confidence}</strong></div></div>
+              <div className="memory-ledger"><div className="ledger-source"><span className="micro-label">CAPTURED INPUT</span><p>{activeMemory.raw}</p></div><div className="ledger-details"><span className="micro-label">EXTRACTED LOCALLY</span>{activeMemory.details.map((detail) => <span key={detail}>{detail}</span>)}</div></div>
               <div className="memory-suggestion"><span className="micro-label">CONTEXTOS SAYS</span><p>“{activeMemory.memory}”</p><button onClick={() => setShowEvidence(!showEvidence)} aria-expanded={showEvidence}>{activeMemory.action} <ArrowUpRight size={14} /></button>{showEvidence && <div className="memory-reasoning"><span className="micro-label">WHY CONTEXTOS SWITCHED</span><p>{activeMemory.why}</p></div>}</div>
             </div>
           </div>

@@ -82,6 +82,13 @@ class ContextRepository(private val appContext: Context) {
     store.write(_threads.value)
   }
 
+  /** Re-inserts a previously forgotten thread so a deletion can be undone. */
+  suspend fun restore(thread: ContextThread) {
+    if (_threads.value.any { it.id == thread.id }) return
+    _threads.value = (_threads.value + thread).sortedByDescending { it.updatedAt }
+    store.write(_threads.value)
+  }
+
   fun queryLocal(query: String): ContextQueryResult = LocalContextQueryEngine.answer(query, _threads.value)
 
   suspend fun seedLocalDemo() {

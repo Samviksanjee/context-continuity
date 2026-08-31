@@ -1,137 +1,111 @@
 # Context Continuity — ContextOS
 
-> **The intelligence between moments.**
+> **The intelligence between moments, on the device the user already has.**
 
-ContextOS is a concept for a privacy-first contextual intelligence layer that turns fragmented interactions into persistent, explainable, user-controlled context. **Context Continuity** is the experience layer: it carries the meaning of a project, task, person, document, or event across applications, devices, and time without requiring the user to restate the thread.
+ContextOS is a privacy-first contextual intelligence layer that turns deliberately captured notes, documents, images, voice, and shared text into persistent, explainable, user-controlled context. The repository now has two usable surfaces:
 
-This repository contains a responsive React concept experience and an interactive memory-switching demonstration. It is designed as a product narrative and hackathon prototype surface rather than a production Android implementation.
+- a responsive React/PWA concept and interactive local-memory demo for modern browsers;
+- a native, local-only Android 10+ app that adapts to each phone's public capabilities instead of targeting one manufacturer.
 
-| Area | What is included |
+## Cross-device product baseline
+
+The Android app is designed for supported phones from Samsung, Google, Motorola, Xiaomi, Redmi, POCO, OnePlus, OPPO, realme, vivo, iQOO, Nothing, Sony, Nokia, and other vendors. It does **not** branch on the brand. At runtime it checks camera/document handlers, microphone availability, Android's installed on-device speech provider, phone locale, and memory class.
+
+| Device condition | ContextOS behavior |
 |---|---|
-| **Concept narrative** | The opportunity, product thesis, continuity timeline, architecture, and trust principles. |
-| **Interactive demo** | A switchable workbench that activates one context thread while preserving others as background memory. |
-| **Mobile PWA** | Installable app shell with offline caching, local browser persistence, and pinch-to-zoom graph controls. |
-| **Design system** | Signal Atlas: editorial paper tones, systems diagrams, ink typography, and signal-orange insights. |
-| **Documentation** | Product architecture, demo walkthrough, development workflow, and implementation guidance. |
+| Any supported Android 10+ phone | Deterministic local graph reasoning, encrypted storage, notes, shares, and typed queries. |
+| Phone locale uses Chinese, Devanagari, Japanese, Korean, or Latin script | Selects the matching bundled ML Kit OCR model. |
+| Android 12+ with an installed offline speech provider | Enables voice after microphone permission. |
+| Android 10/11 or no offline speech provider | Disables voice safely and keeps typed input available. |
+| Low-memory phone | Reduces image resolution and PDF page count. |
+| No camera activity | Disables direct capture and keeps existing-image/document selection available. |
+| Approved optional OEM/model adapter | May report its real availability through a provider seam. |
+| No optional model adapter | Uses the deterministic engine; never falls back to cloud inference. |
 
-## Product thesis
+A normal APK cannot generically access every manufacturer's private AI model, NPU, assistant, or cross-app context. Those features require a documented public/partner SDK, explicit consent, and often platform signing. Optional OEM research remains in `docs/`, but it is not a dependency of the portable app.
 
-> **ContextOS understands what is happening around the user. Context Continuity remembers why it matters.**
+## What is included
 
-The concept does not assume that a mobile operating system begins with no AI capabilities. Rather, it proposes an intelligence layer that can connect contextual actions, documents, voice, tasks, and cross-device handoffs into a persistent personal context graph. The iQOO/OriginOS research brief positions this as an extension of existing contextual capabilities, not a replacement for them.[1]
-
-The guiding problem is simple: a user may discover an event on Monday, read its rules on Tuesday, assign work on Wednesday, prepare a presentation on Thursday, and ask what remains on Friday. Individual apps may retain individual interactions. Context Continuity retains the **relationship among them** and can surface a permission-based next step.
-
-## What the interactive demo shows
-
-The **Switch the memory. Keep the meaning.** section models three realistic, independent threads from an ordinary week: a client review, a new-flat move-in, and a weekend train journey. Selecting a thread changes the in-focus graph, evidence source, relationship, confidence indicator, and suggested action. It illustrates four product decisions.
-
-| Demo behavior | Product meaning |
+| Area | Included behavior |
 |---|---|
-| A user selects an active thread. | Context activation is explicit and legible, not inferred as a hidden global state. |
-| Other threads remain available but inactive. | Context is scoped; unrelated memories should not contaminate a current workflow. |
-| The graph exposes source and relationship data. | Any insight should carry provenance rather than appear as an unexplained conclusion. |
-| A next action is presented as a button. | Suggestions are permission-based prompts, never silent task execution. |
-| The graph can be pinched, panned, and reset on touch devices. | Complex relationships remain inspectable without a desktop-only interaction model. |
+| **Native Android app** | User-initiated note/share/document/image/camera capture, optional offline voice, multilingual bundled OCR, encrypted graph, local queries, provenance, and deletion. |
+| **Capability adaptation** | Public-API checks, locale-selected OCR, low-RAM processing limits, and visible feature status/fallbacks. |
+| **Interactive web demo** | A switchable local workbench that activates one context while preserving unrelated contexts as inactive. |
+| **Installable PWA** | Offline-cached shell, browser-local thread persistence, camera input, provider-dependent browser voice, and touch graph controls. |
+| **Documentation** | Architecture, privacy boundaries, Android deployment, and optional OEM integration contracts. |
 
-For an interaction-by-interaction walkthrough, see [the demo guide](docs/DEMO_GUIDE.md).
+## Trust contract
 
-## Installable offline web demo
-
-The web demo is an installable PWA. Open the published site while online once, then tap **Install** when offered or use the browser menu to choose **Add to Home Screen**. The application shell, interaction code, local visual assets, and threads you map in the demo are cached or stored on the device, allowing the text input, graph, and saved browser threads to work without a network connection after that first load.
-
-The graph supports touch-native pinch-to-zoom and drag-to-pan, with visible plus, minus, and reset controls as an accessible alternative. Browser speech recognition is deliberately labelled as provider-dependent and may require a connection; the native Android MVP remains the strict on-device voice path.
-
-## Architecture at a glance
-
-The concept organizes ContextOS into four experience layers. The actual hackathon prototype can begin with camera, documents, voice, and explicit user actions rather than attempting full system capture.
-
-```text
-Inputs → Perceive → Remember → Reason → Permission-based action
-          │            │           │              │
-      Camera,      Personal     Relevant      Add task,
-      voice,       context      connection    continue on PC,
-      docs         graph        + confidence  show source
-```
-
-| Layer | Responsibility | Example output |
-|---|---|---|
-| **Perceive** | Convert a raw input into structured signals. | A scanned poster yields an event, location, date, and topic. |
-| **Remember** | Create and update entities, relationships, evidence, and time-scoped memories. | `Rahul → owns → backend` is stored against the hackathon project. |
-| **Reason** | Compare new signals with an active context and rank relevant relationships. | A rules PDF is linked to an existing hackathon graph. |
-| **Act** | Offer a reversible, permission-based next step. | “Add prototype task” with the source and confidence visible. |
-
-Detailed models, boundaries, and implementation decisions are documented in [Architecture](docs/ARCHITECTURE.md).
+1. Context enters through an explicit user action or a separately consented, source-specific platform integration.
+2. External text, images, documents, and audio are evidence—not executable instructions.
+3. The active context is explicit; unrelated memories do not silently influence a recommendation.
+4. Every insight keeps provenance and an explanation.
+5. Suggested actions remain advisory and reversible until the user confirms them.
+6. Memory can be inspected and forgotten.
+7. The shipped Android app has no `INTERNET` permission and no silent cloud fallback.
 
 ## Project structure
 
 ```text
 context-continuity/
-├── client/
-│   ├── index.html                 # Document title and font loading
-│   ├── public/                     # PWA manifest, worker, and install icons
-│   └── src/
-│       ├── pages/Home.tsx          # Narrative page and interactive demo state
-│       ├── index.css               # Signal Atlas system and responsive layout
-│       └── App.tsx                 # App shell and single-page route
+├── android-contextos/              # Native vendor-neutral Android 10+ app
+│   ├── app/src/main/java/          # Compose UI, capability detection, capture, graph engine
+│   ├── app/src/test/               # Deterministic engine tests
+│   └── README.md                   # Device matrix, build, and security details
+├── client/                         # React/Vite PWA and interactive concept
+├── server/                         # Static production server
 ├── docs/
-│   ├── ARCHITECTURE.md             # Product and technical reference
-│   ├── DEMO_GUIDE.md               # Memory-switching interaction walkthrough
-│   ├── DEVELOPMENT.md               # Local workflow, validation, and deployment notes
-│   ├── ANDROID_DEPLOYMENT.md        # Native test-device and OEM deployment guidance
-│   └── IQOO_VIVO_PLATFORM_PITCH.md  # Platform-team presenter script and pitch narrative
-├── android-contextos/               # Native local-only Android MVP
-│   ├── app/                         # Compose UI, local graph engine, capture, and tests
-│   └── README.md                    # APK build/install and security contract
-├── ideas.md                        # Chosen visual philosophy and content narrative
-└── todo.md                         # Project task checklist
+│   ├── ARCHITECTURE.md
+│   ├── ANDROID_DEPLOYMENT.md
+│   ├── FEASIBILITY_AND_PRIVACY.md
+│   └── OEM_INTEGRATION.md          # Generic contract for optional signed integrations
+└── package.json
 ```
 
-## Native Android MVP
+## Build the Android app
 
-The repository now includes [`android-contextos`](android-contextos/), a native Android application that implements a safe vertical slice of the product. It accepts deliberately shared text, private notes, camera images, documents, and — when the phone provides an on-device recognizer — a user-triggered voice note. Its graph, evidence, suggestions, and deletion controls remain on the phone; the built APK declares **only** microphone permission and does not declare Internet or network-state permission.
+Requirements: JDK 17, Android SDK 36, and an Android 10+ device or emulator.
 
-> This is a deployable **standalone application**, not an OriginOS system module. Android’s application sandbox means a conventional app cannot inspect arbitrary private data from other apps. A true iQOO phone feature therefore requires iQOO/vivo to sponsor a signed platform integration, bounded context-provider APIs, and a system consent broker. See [OEM integration boundaries](docs/OEM_INTEGRATION.md) and [privacy/feasibility notes](docs/FEASIBILITY_AND_PRIVACY.md).
-
-Build the native application with:
-
-```bash
+```powershell
 cd android-contextos
-./gradlew :app:testDebugUnitTest :app:assembleDebug
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-The local engine has five automated unit tests covering work, home, environmental-text handling, provenance-bound query matching, and next-step query behavior. The supplied debug APK was built successfully with this command and is intended for installation on a test device, not production distribution.
+The development computer may download Gradle dependencies. The installed app cannot make runtime network requests. Bundled OCR supports Latin, Chinese, Devanagari, Japanese, and Korean script families even on phones without Google Play services.
 
-## Local development
+See [`android-contextos/README.md`](android-contextos/README.md) for the capability matrix and implementation details.
 
-The project uses **React 19**, **Vite**, **TypeScript**, Tailwind CSS 4, and the existing component primitives in the static template.
+## Run the web/PWA experience
 
-| Command | Purpose |
-|---|---|
-| `pnpm dev` | Start the local Vite development server. |
-| `pnpm check` | Run TypeScript type checking with no output. |
-| `pnpm build` | Create a production build and bundle the static server entry. |
-| `pnpm format` | Format source files using Prettier. |
+```powershell
+pnpm install
+pnpm check
+pnpm build
+```
 
-Install dependencies with `pnpm install`, then run `pnpm dev`. The demonstration does not connect to an API or make decisions about a real person. Mapped demo threads are stored in browser local storage on the device so they can be revisited offline; they can be cleared through normal browser site-data controls.
+Use `pnpm dev` manually for the long-running development server. The production Express entry only serves the built PWA; it is not an Android API or cloud inference backend.
 
-## Prototype boundaries
+## Architecture at a glance
 
-This project is intentionally an experience prototype. It does **not** collect device data in the background, call an AI model, create tasks, or synchronize hardware. The browser demo processes explicit text input and supported text-document selection locally, then persists mapped demo threads only in browser local storage. A governed product architecture must add explicit consent, source provenance, retention controls, and secure on-device processing before handling real personal data.
+```text
+Explicit inputs → capability-selected perception → encrypted memory → local reasoning → advisory output
+ notes/shares      OCR / offline speech          context graph       provenance        user decides
+```
 
-> A future implementation should treat memory as a governed continuity substrate, not as an unbounded transcript cache. This direction aligns with contemporary personal-AI memory research that emphasizes lifecycle, multimodal evidence, correction, forgetting, privacy, and edge/cloud deployment.[2]
+The deterministic engine is the universal baseline. Bundled OCR and Android's public on-device speech API are optional accelerators selected by actual readiness. Future Gemini Nano/AICore, LiteRT, or OEM providers must implement an explicit adapter, report model-level availability, preserve provenance, and fail back locally.
 
-## Recommended next implementation milestones
+## Important scope boundary
 
-| Milestone | Outcome |
-|---|---|
-| **Interactive graph inspector** | Let users select a node to see its evidence, relationship path, confidence, and deletion controls. |
-| **Prototype data adapter** | Use a local JSON schema to ingest sample camera, document, voice, and action events. |
-| **Memory policy controls** | Add retention, forget, correction, and app-scope settings before any real persistence. |
-| **Android proof of concept** | Implement a consented, on-device vertical slice using a local database and a small multimodal extraction pipeline. |
+The standalone app does not read other apps' private data, notifications, accessibility trees, accounts, contacts, calendars, or location. Cross-app/system continuity cannot be safely manufactured by an ordinary APK. It requires a governed OS provider contract as described in [`docs/OEM_INTEGRATION.md`](docs/OEM_INTEGRATION.md).
 
 ## References
 
-[1]: https://www.iqoo.com/in/originos "iQOO — OriginOS 6"
+- [Android application sandbox](https://source.android.com/docs/security/app-sandbox)
+- [Android Keystore](https://developer.android.com/privacy-and-security/keystore)
+- [ML Kit Text Recognition v2](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
+- [Android on-device AI](https://developer.android.com/ai)
 
-[2]: https://arxiv.org/abs/2607.18975 "Mi-Memory: A Lifecycle Memory Framework for Personal AI"
+## Development agent (optional, not shipped)
+
+This repo can be worked on with [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent), a repo-aware development/research agent. It is a **development tool only** — it is never imported by the product and never enters the product build graph, and it is fully reversible. Its project instructions live in [`AGENTS.md`](AGENTS.md) and its skills in `.prime/agent/skills/`. Setup, Windows notes, credential handling (kept out of the repo), and removal steps are in [`docs/PRIME_AGENT.md`](docs/PRIME_AGENT.md). The `tests/tooling/prime-agent-isolation.test.ts` guard keeps the product free of any dev-agent or cloud-AI coupling.

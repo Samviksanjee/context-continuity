@@ -1,53 +1,53 @@
-# ContextOS OEM Integration Boundary
+# Optional Android OEM integration boundaries
 
-## What a standalone application can deliver
+The standalone `android-contextos` app is the portable product baseline. It accepts **user-initiated** notes, shares, documents, images, camera captures, and optional on-device speech; stores an encrypted local graph; and reasons locally with visible provenance and deletion controls. It does not depend on a phone brand, Google Play services, a cloud API, or a proprietary assistant.
 
-The accompanying `android-contextos` application is the correct starting point for a privacy-first MVP. It can accept **user-initiated** content through Android’s share sheet, a document picker, a camera capture, and a private note. It can store and reason over this content locally, with provenance and deletion controls.
+A conventional Android app is not an operating-system context service. Android's sandbox prevents it from reading private data from other apps, and ContextOS must not work around that protection with accessibility scraping, notification surveillance, hidden APIs, or guessed vendor services.
 
-This is a useful and deployable application feature. It is not an operating-system context service.
-
-| Standalone application | OEM / OriginOS platform module |
+| Portable standalone app | Optional signed OEM/platform module |
 |---|---|
-| User-selected document and image capture | Context broker for consented, system-mediated signals |
-| Share-sheet ingestion | Origin Island card or system surface |
-| App-private encrypted graph | Platform account-less graph protected by OS policy |
-| Explicit “continue” export intent | Office Kit context-transfer protocol |
-| Local recommendation UI | Task Handoff semantic-state preservation |
-| User-only permissions | Signature permissions, platform signing, SELinux and API review |
+| Capability-detected document and image capture | Governed provider for consented system signals |
+| Android share-sheet ingestion | OEM system card, island, launcher, or assistant surface |
+| App-private encrypted graph | Platform graph protected by OS policy and scoped identities |
+| Explicit export/continue request | Contracted cross-device task handoff |
+| Deterministic reasoning and bundled OCR | Approved local foundation model/runtime adapter |
+| User runtime permissions | Signature permissions, platform signing, SELinux, and API review |
 
-Android’s sandbox is not an obstacle to work around; it is the reason that cross-app continuity must be delivered as a **governed OS capability** rather than an app that surveils other apps.[1]
+## Required contract for any vendor
 
-## Required iQOO/vivo collaboration
+A Samsung, Google, Xiaomi, OPPO, OnePlus, realme, vivo/iQOO, Motorola, Nothing, Sony, or other OEM integration must provide the same governed boundary:
 
-Deploying ContextOS as an actual iQOO phone feature requires a written OEM engagement and at least these deliverables:
-
-| Workstream | Required OEM commitment |
+| Workstream | Required commitment |
 |---|---|
-| **Platform ownership** | A signed system or privileged application package, reviewed by the OriginOS security team. |
-| **Consent broker** | OS-level policy UI that mediates every source and lets users revoke individual scopes. |
-| **Context provider contracts** | Narrow, versioned APIs for Origin Island, DocMaster, AI Captions, Office Kit, and Task Handoff. No arbitrary database access. |
-| **On-device runtime** | Support contract for AICore, BlueLM/VCAP, LiteRT-LM, or another vendor-approved local runtime; capability discovery must be device-specific. |
-| **Cross-device transfer** | Encrypted, mutually authenticated transport between the user’s own devices; no default server relay. |
-| **Security review** | Threat modeling, prompt-injection tests, resource/battery profiling, model evaluation, and OTA update plan. |
-| **Compliance** | Region-specific privacy review, app-store disclosures if distributed separately, and documented retention/deletion behavior. |
+| Platform ownership | A documented SDK or signed/privileged module reviewed by the vendor security team. |
+| Consent broker | OS-level policy UI that mediates each source and lets users revoke individual scopes. |
+| Context provider contracts | Narrow, versioned APIs for approved sources; never arbitrary application database access. |
+| On-device runtime | A supported public or partner model API with feature-level availability, model readiness, resource limits, and failure states. |
+| Cross-device transfer | Encrypted, mutually authenticated transport between the user's own devices; no default server relay. |
+| Security and quality | Threat modeling, environmental prompt-injection tests, resource/battery profiling, model evaluation, and OTA compatibility. |
+| Compliance | Region-specific privacy review, accurate store disclosures, and documented retention/deletion behavior. |
+
+`DeviceAiFeatureProvider` is the standalone app's discovery seam for such modules. A provider must report actual readiness. The core app does not select a provider from a manufacturer name and does not access hidden Binder services. If no approved provider is ready, deterministic reasoning remains the active engine.
 
 ## Non-negotiable product requirements
 
-1. **No ambient surveillance.** Context is acquired through explicit user action or a visibly enabled, source-specific system integration.
-2. **No cloud fallback.** If a device lacks a supported local runtime, the product must either use deterministic local extraction or say that advanced enrichment is unavailable.
-3. **No opaque action.** Any suggested action must show its source, confidence, and intended effect, then require confirmation.
-4. **No environmental instructions.** Screen, document, audio, and notification text remain data. They cannot become system instructions.
-5. **No irretrievable memory.** Users can inspect, correct, archive, or forget a context, with deletion propagated across any locally paired devices.
+1. **No ambient surveillance.** Context enters through explicit user action or a visibly enabled, source-specific system integration.
+2. **No cloud fallback.** If local advanced inference is unavailable, use deterministic extraction or state that enrichment is unavailable.
+3. **No opaque action.** Suggestions show source, confidence, and intended effect, then require confirmation.
+4. **Environmental content stays data.** Screen, document, audio, and notification text cannot become system instructions.
+5. **Memory remains governable.** Users can inspect, correct, archive, and forget context, with deletion propagated to paired local devices.
+6. **Capabilities, not brands.** Every optional source or AI runtime is enabled only after its contracted API reports support.
 
-## Product rollout stages
+## Rollout stages
 
 | Stage | Scope | Success condition |
 |---|---|---|
-| **MVP APK** | User-shared text, files, camera, encrypted local graph, visible deletion. | An offline user can make and delete a context without granting broad device access. |
-| **Partner beta** | Approved OriginOS surface, documented consent broker, model capability detection. | The integration passes iQOO security and battery tests on target devices. |
-| **System feature** | Privileged provider contracts and encrypted device-to-device continuity. | No cross-app source is accessible without an explicit policy grant and provenance record. |
+| Portable APK | User-shared text/files, optional camera/voice, multilingual OCR, encrypted graph, visible deletion. | The same build degrades safely across Android 10+ device profiles. |
+| Vendor adapter beta | One approved system surface, consent broker, and model/source capability provider. | The module passes that vendor's privacy, security, compatibility, and battery tests. |
+| Platform feature | Privileged providers and encrypted device-to-device continuity. | No cross-app source is accessible without an explicit policy grant and provenance record. |
+
+Vendor-specific pitch documents in this repository are historical/partner examples, not runtime dependencies or product requirements.
 
 ## Reference
 
-[1]: https://source.android.com/docs/security/app-sandbox "Android Open Source Project — Application Sandbox"
-
+- [Android application sandbox](https://source.android.com/docs/security/app-sandbox)

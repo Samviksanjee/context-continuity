@@ -1,6 +1,13 @@
 /* Signal Atlas: editorial systems design, warm paper + ink + signal orange, asymmetric narrative layouts. */
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDownRight, ArrowUpRight, Camera, ChevronRight, CircleHelp, Download, FileText, LockKeyhole, Menu, Mic, Minus, MoveRight, Network, Play, Plus, RotateCcw, ScanLine, Send, Sparkles, Timer, WifiOff, X } from "lucide-react";
+import { buildContextGraph } from "../lib/contextGraph";
+import { parseConfidence, uncertaintyPhrase } from "../lib/advisory";
+import { readDeviceProfile, gestureHint } from "../lib/deviceProfile";
+import { enMessages, translate, textDirection } from "../lib/i18n";
+import ContinuityPanel from "../components/ContinuityPanel";
+
+const APP_LOCALE = "en";
 
 const layers = [
   { key: "perceive", label: "01 / Perceive", title: "Notice what is happening", copy: "Camera, screen, voice and documents become structured signals — without asking you to narrate the obvious.", icon: ScanLine, color: "#DDE8E2" },
@@ -50,7 +57,7 @@ function createMemory(text: string, sourceKind: CaptureSource): MemorySpace {
   const task = value.match(/(?:need to|must|todo|task|should)\s*[:\-]?\s*([^.!\n]{3,72})/i)?.[1]?.trim();
   const keywords = Array.from(new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 3 && !["this", "that", "with", "from", "will", "have", "your", "they"].includes(word)))).slice(0, 4);
   const nodes = [...people, ...keywords.map((word) => word.replace(/^./, (char) => char.toUpperCase())), "Evidence"].slice(0, 5);
-  const details = [`Source: ${sourceKind.toLowerCase()} · user initiated`, `Context: ${label}`, ...(people.length ? [`People: ${people.join(", ")}`] : []), ...(time.length ? [`Time: ${time.join(", ")}`] : []), ...(task ? [`Task: ${task}`] : []), `Stored: this browser session only`];
+  const details = [`Source: ${sourceKind.toLowerCase()} · user initiated`, `Context: ${label}`, ...(people.length ? [`People: ${people.join(", ")}`] : []), ...(time.length ? [`Time: ${time.join(", ")}`] : []), ...(task ? [`Task: ${task}`] : []), `Stored: on this device until you delete it`];
   const suggestion = task ? `Your captured task is “${task}”. Review it before ContextOS suggests an action.` : time.length ? `This looks time-sensitive (${time.join(", ")}). Add one more source or a task to strengthen the context.` : "I captured the context locally. Add a person, time, or task if you want a stronger recommendation.";
   return { key: `capture-${Date.now()}`, label, cue: `${sourceKind.toLowerCase()} · live capture`, status: "LIVE THREAD", color: "#F26B3A", source: `${sourceKind.toLowerCase()} / user input`, relationship: `Input → ${label}`, memory: suggestion, why: `ContextOS parsed this only from the text you entered. It found ${people.length ? people.join(", ") : "no named people"}${time.length ? ` and ${time.join(", ")}` : ""}. The source remains evidence, not an instruction.`, action: "Inspect local evidence", confidence: `${Math.max(72, 96 - Math.max(0, 3 - details.length) * 6)}%`, nodes: nodes.length ? nodes : ["Input", "Evidence", "Context"], raw: value, details, sourceKind };
 }
@@ -70,6 +77,10 @@ export default function Home() {
   const [liveMemories, setLiveMemories] = useState<MemorySpace[]>(() => {
     try { return JSON.parse(window.localStorage.getItem("contextos-live-memories") ?? "[]") as MemorySpace[]; } catch { return []; }
   });
+  const [undoMemories, setUndoMemories] = useState<MemorySpace[] | null>(null);
+  const [governanceNotice, setGovernanceNotice] = useState("");
+  const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
+  const [deviceProfile, setDeviceProfile] = useState(() => readDeviceProfile());
   const [captureStatus, setCaptureStatus] = useState("Choose a source, capture deliberately, then map the evidence.");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -85,12 +96,20 @@ export default function Home() {
   const [graphView, setGraphView] = useState({ scale: 1, x: 0, y: 0 });
   const [isGraphInteracting, setIsGraphInteracting] = useState(false);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const cameraButtonRef = useRef<HTMLButtonElement>(null);
+  const captureFrameButtonRef = useRef<HTMLButtonElement>(null);
+  const captureTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const graphPointersRef = useRef(new Map<number, GraphPoint>());
   const graphGestureRef = useRef({ lastPoint: null as GraphPoint | null, lastCenter: null as GraphPoint | null, lastDistance: 0 });
   const active = layers.find((layer) => layer.key === activeLayer) ?? layers[1];
   const allMemories = [...liveMemories, ...memorySpaces];
   const activeMemory = allMemories.find((memory) => memory.key === activeMemoryKey) ?? allMemories[0];
+  const contextGraph = buildContextGraph(activeMemory);
+  const isLive = activeMemory.key.startsWith("capture-");
+  const isDismissed = dismissedKeys.includes(activeMemory.key);
 
   useEffect(() => {
     if (cameraOpen && cameraStream && videoRef.current) {
@@ -109,6 +128,23 @@ export default function Home() {
   }, [liveMemories]);
 
   useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setMenuOpen(false); menuToggleRef.current?.focus(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!cameraOpen) return;
+    captureFrameButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") closeCamera(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cameraOpen]);
+
+  useEffect(() => {
     const setOnlineState = () => setIsOffline(!navigator.onLine);
     const rememberInstall = (event: Event) => { event.preventDefault(); setDeferredInstall(event as InstallPromptEvent); };
     const installed = () => { setDeferredInstall(null); setInstallStatus("ContextOS is installed. Your saved local threads remain on this device."); };
@@ -122,6 +158,25 @@ export default function Home() {
       window.removeEventListener("beforeinstallprompt", rememberInstall);
       window.removeEventListener("appinstalled", installed);
     };
+  }, []);
+
+  useEffect(() => {
+    const update = () => setDeviceProfile(readDeviceProfile());
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = APP_LOCALE;
+    document.documentElement.dir = textDirection(APP_LOCALE);
   }, []);
 
   useEffect(() => { setGraphView({ scale: 1, x: 0, y: 0 }); }, [activeMemoryKey]);
@@ -176,6 +231,62 @@ export default function Home() {
     setShowEvidence(true);
     setCaptureStatus("Context mapped on this device. Inspect the nodes and evidence below—even when offline.");
     setUserInput("");
+  }
+
+  function forgetMemory(key: string) {
+    const removed = liveMemories.find((memory) => memory.key === key);
+    if (!removed) return;
+    setLiveMemories((current) => current.filter((memory) => memory.key !== key));
+    setActiveMemoryKey((prev) => {
+      if (prev !== key) return prev;
+      const nextLive = liveMemories.find((memory) => memory.key !== key);
+      return nextLive?.key ?? memorySpaces[0].key;
+    });
+    setUndoMemories([removed]);
+    setGovernanceNotice(`Forgot “${removed.label}”. It was deleted from this device.`);
+  }
+
+  function clearAllMemories() {
+    if (!liveMemories.length) return;
+    setUndoMemories(liveMemories);
+    setGovernanceNotice(`Cleared ${liveMemories.length} saved thread${liveMemories.length > 1 ? "s" : ""} from this device.`);
+    setLiveMemories([]);
+    setActiveMemoryKey(memorySpaces[0].key);
+  }
+
+  function undoDelete() {
+    if (!undoMemories) return;
+    setLiveMemories((current) => [...undoMemories, ...current]);
+    setActiveMemoryKey(undoMemories[0].key);
+    setGovernanceNotice("Restored your saved context.");
+    setUndoMemories(null);
+  }
+
+  function dismissSuggestion() {
+    setDismissedKeys((current) => current.includes(activeMemory.key) ? current : [...current, activeMemory.key]);
+  }
+
+  function showSuggestion() {
+    setDismissedKeys((current) => current.filter((key) => key !== activeMemory.key));
+  }
+
+  function onTabKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const navigationKeys = ["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End"];
+    if (!navigationKeys.includes(event.key)) return;
+    event.preventDefault();
+    const count = allMemories.length;
+    if (count === 0) return;
+    const currentIndex = Math.max(0, allMemories.findIndex((memory) => memory.key === activeMemoryKey));
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") nextIndex = (currentIndex + 1) % count;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + count) % count;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = count - 1;
+    const target = allMemories[nextIndex];
+    setActiveMemoryKey(target.key);
+    setSelectedNode(target.nodes[0] ?? null);
+    setShowEvidence(false);
+    requestAnimationFrame(() => tabRefs.current[nextIndex]?.focus());
   }
 
   async function startVoiceCapture() {
@@ -282,6 +393,7 @@ export default function Home() {
     cameraStream?.getTracks().forEach((track) => track.stop());
     setCameraStream(null);
     setCameraOpen(false);
+    cameraButtonRef.current?.focus();
   }
 
   function captureCameraFrame() {
@@ -295,6 +407,7 @@ export default function Home() {
     closeCamera();
     setUserInput((current) => current || "Camera observation captured. Describe the important people, time, place, or task shown in the frame.");
     setCaptureStatus("Frame captured on this device. Add a concise observation so the local graph can map it.");
+    captureTextareaRef.current?.focus();
   }
 
   async function installPwa() {
@@ -356,18 +469,19 @@ export default function Home() {
 
   return (
     <div className="site-shell">
+      <a className="skip-link" href="#top">Skip to main content</a>
       <header className="topbar">
         <button className="brand" onClick={() => scrollToId("top")} aria-label="Back to top">
           <img src="/manus-storage/context-logo_28ea51ee.png" alt="" className="brand-mark" />
           <span>CONTEXT<span className="brand-slash">/</span>CONTINUITY</span>
         </button>
-        <nav className={menuOpen ? "nav-links nav-open" : "nav-links"} aria-label="Main navigation">
+        <nav id="primary-navigation" className={menuOpen ? "nav-links nav-open" : "nav-links"} aria-label="Main navigation">
           <button onClick={() => { scrollToId("thesis"); setMenuOpen(false); }}>The thesis</button>
           <button onClick={() => { scrollToId("memory-demo"); setMenuOpen(false); }}>Demo</button>
           <button onClick={() => { scrollToId("architecture"); setMenuOpen(false); }}>Architecture</button>
           <button onClick={() => { scrollToId("trust"); setMenuOpen(false); }}>Trust</button>
         </nav>
-        <button className="menu-toggle" aria-label="Toggle menu" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={18} /> : <Menu size={18} />}</button>
+        <button ref={menuToggleRef} className="menu-toggle" aria-label={menuOpen ? "Close menu" : "Open menu"} aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={18} /> : <Menu size={18} />}</button>
         <button className="nav-cta" onClick={() => scrollToId("architecture")}>Explore the layer <ArrowUpRight size={15} /></button>
         <button className="install-cta" onClick={() => void installPwa()}><Download size={14} /> {deferredInstall ? "Install" : "Add to home"}</button>
       </header>
@@ -382,17 +496,17 @@ export default function Home() {
         {atlasSections.map(({ index, id, label }) => <button key={id} className={activeAtlasId === id ? "active" : ""} onClick={() => scrollToId(id)}><i /><span>{index}</span><small>{label}</small></button>)}
       </aside>
 
-      <main id="top">
+      <main id="top" tabIndex={-1}>
         <section className="hero section-pad">
           <div className="hero-copy">
-            <div className="eyebrow"><span className="signal-dot" /> A proposal for iQOO / OriginOS</div>
+            <div className="eyebrow"><span className="signal-dot" /> Vendor-neutral / Android + Web</div>
             <h1>The intelligence<br /><em>between</em> moments.</h1>
             <p className="hero-lede">ContextOS understands what is happening around you. <strong>Context Continuity remembers why it matters</strong> — and carries that understanding across apps, devices, time and tasks.</p>
             <div className="hero-actions">
               <button className="primary-button" onClick={() => scrollToId("thesis")}>See the missing layer <ArrowDownRight size={17} /></button>
               <button className="text-button" onClick={() => scrollToId("story")}><Play size={14} fill="currentColor" /> Follow one project</button>
             </div>
-            <div className="hero-meta"><span>CONCEPT / 01</span><span>PRIVATE BY DEFAULT</span><span>EDGE-FIRST</span></div>
+            <div className="hero-meta"><span>CONCEPT / 01</span><span>PRIVATE BY DEFAULT</span><span>CAPABILITY-DRIVEN</span></div>
           </div>
           <div className="hero-visual">
             <div className="visual-caption caption-top">A living map of what matters</div>
@@ -405,8 +519,8 @@ export default function Home() {
         <section id="thesis" className="thesis section-pad">
           <div className="section-kicker">01 / The missing layer</div>
           <div className="thesis-grid">
-            <h2>iQOO already has<br /><span>the moments.</span></h2>
-            <div className="thesis-body"><p>Origin Island. AI Search. Copy &amp; Go. Office Kit. Phone-to-PC handoff. The pieces are already there.</p><p className="large-note">We propose the layer that turns those <strong>isolated contextual moments</strong> into one persistent, private intelligence.</p><button className="underlined-button" onClick={() => scrollToId("architecture")}>Unify the pieces <ChevronRight size={16} /></button></div>
+            <h2>Every phone has<br /><span>the moments.</span></h2>
+            <div className="thesis-body"><p>Camera. Documents. Voice. Share sheets. Local AI. The exact capabilities vary by device.</p><p className="large-note">We provide the layer that turns those <strong>isolated contextual moments</strong> into private continuity, using each phone's available features with safe local fallbacks.</p><button className="underlined-button" onClick={() => scrollToId("architecture")}>Unify the pieces <ChevronRight size={16} /></button></div>
           </div>
           <div className="comparison-strip"><div><span>Today</span><strong>Feature → feature</strong><small>Useful in the moment. Forgotten after.</small></div><div className="strip-arrow">→</div><div className="highlight-cell"><span>ContextOS</span><strong>Moment → meaning</strong><small>Connected across time, apps, devices.</small></div></div>
         </section>
@@ -420,45 +534,71 @@ export default function Home() {
         </section>
 
         <section id="memory-demo" className="memory-demo section-pad" aria-labelledby="memory-demo-heading">
-          <div className="memory-demo-head"><div><div className="section-kicker">03 / Live local demo</div><h2 id="memory-demo-heading">Give it a moment.<br /><em>See the meaning.</em></h2></div><p>Enter a note, spoken outcome, document excerpt, or camera observation. The demo turns it into a visible context thread: its source, entities, timing, task cues, graph nodes, and a permission-based suggestion all remain in this browser session.</p></div>
+          <div className="memory-demo-head"><div><div className="section-kicker">03 / Live local demo</div><h2 id="memory-demo-heading">Give it a moment.<br /><em>See the meaning.</em></h2></div><p>Enter a note, spoken outcome, document excerpt, or camera observation. The demo turns it into a visible context thread: its source, entities, timing, task cues, graph nodes, and a permission-based suggestion all stay on this device until you delete them.</p></div>
           <div className="memory-workbench">
-            <div className="memory-selector" role="tablist" aria-label="Choose a context thread">
+            <div className="memory-selector" role="tablist" aria-orientation="vertical" aria-label="Choose a context thread" onKeyDown={onTabKeyDown}>
               <span className="micro-label">AVAILABLE CONTEXTS</span>
-              {allMemories.map((memory, index) => <button key={memory.key} role="tab" aria-selected={activeMemory.key === memory.key} className={activeMemory.key === memory.key ? "memory-choice active" : "memory-choice"} onClick={() => { setActiveMemoryKey(memory.key); setSelectedNode(memory.nodes[0] ?? null); setShowEvidence(false); }}><span className="choice-index">0{index + 1}</span><span className="choice-copy"><strong>{memory.label}</strong><small>{memory.cue}</small></span><span className="choice-status" style={{ backgroundColor: memory.color }} /></button>)}
+              {allMemories.map((memory, index) => <button key={memory.key} ref={(element) => { tabRefs.current[index] = element; }} id={`tab-${memory.key}`} role="tab" aria-selected={activeMemory.key === memory.key} aria-controls="memory-stage-panel" tabIndex={activeMemory.key === memory.key ? 0 : -1} className={activeMemory.key === memory.key ? "memory-choice active" : "memory-choice"} onClick={() => { setActiveMemoryKey(memory.key); setSelectedNode(memory.nodes[0] ?? null); setShowEvidence(false); }}><span className="choice-index">0{index + 1}</span><span className="choice-copy"><strong>{memory.label}</strong><small>{memory.cue}</small></span><span className="choice-status" style={{ backgroundColor: memory.color }} /></button>)}
               <div className="selector-note"><span className="signal-dot" /> Only the active thread can shape the next suggestion.</div>
             </div>
-            <div className="memory-stage" role="tabpanel" aria-live="polite" aria-label={`${activeMemory.label} context details`}>
+            <div className="memory-stage" id="memory-stage-panel" role="tabpanel" aria-live="polite" aria-label={`${activeMemory.label} context details`}>
               <div className="capture-console">
                 <div className="capture-console-head"><span className="micro-label">TRY CONTEXTOS / THIS DEVICE</span><span className={isOffline ? "offline-state" : "online-state"}>{isOffline ? <><WifiOff size={11} /> OFFLINE MODE</> : "PWA READY"}</span></div>
-                <textarea value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="Try: ‘Aisha will update the budget slide before tomorrow’s 9:00 AM client review. Need to verify slide 7.’" aria-label="Enter a local ContextOS input" />
+                <textarea ref={captureTextareaRef} value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="Try: ‘Aisha will update the budget slide before tomorrow’s 9:00 AM client review. Need to verify slide 7.’" aria-label="Enter a local ContextOS input" />
                 <input ref={documentInputRef} className="visually-hidden" type="file" accept=".txt,.md,.csv,.json,.pdf,image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleDocument(file); event.currentTarget.value = ""; }} />
-                {cameraOpen && <div className="camera-capture"><video ref={videoRef} muted playsInline aria-label="Live camera preview" /><div><button onClick={captureCameraFrame}>Capture frame</button><button onClick={closeCamera}>Close camera</button></div></div>}
+                {cameraOpen && <div className="camera-capture" role="dialog" aria-modal="true" aria-label="Camera capture"><video ref={videoRef} muted playsInline aria-label="Live camera preview" /><div><button ref={captureFrameButtonRef} onClick={captureCameraFrame}>Capture frame</button><button onClick={closeCamera}>Close camera</button></div></div>}
                 {cameraPreview && <div className="camera-preview"><img src={cameraPreview} alt="Captured browser camera frame" /><span>Frame stays in this browser session.</span></div>}
-                <div className="capture-tools" aria-label="Capture from browser"><button onClick={() => setCaptureSource("NOTE")} className={captureSource === "NOTE" ? "active" : ""}><Sparkles size={13} />Note</button><button onClick={() => void startVoiceCapture()} className={captureSource === "VOICE" ? "active" : ""} disabled={isListening}>{isListening ? <ScanLine size={13} /> : <Mic size={13} />}{isListening ? "Listening" : "Voice"}</button><button onClick={() => documentInputRef.current?.click()} className={captureSource === "DOCUMENT" ? "active" : ""}><FileText size={13} />Document</button><button onClick={() => void openCamera()} className={captureSource === "CAMERA" ? "active" : ""}><Camera size={13} />Camera</button></div>
-                <div className="microphone-picker"><div><span className="microphone-picker-label">VOICE INPUT</span><select value={selectedMicrophoneId} onChange={(event) => setSelectedMicrophoneId(event.target.value)} disabled={!microphones.length || isListening} aria-label="Preferred microphone input"><option value="">{microphones.length ? "Browser default microphone" : "Detect microphones first"}</option>{microphones.map((device, index) => <option key={`${device.deviceId}-${index}`} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}</select></div><button onClick={() => void discoverMicrophones()} disabled={isDiscoveringMicrophones || isListening}>{isDiscoveringMicrophones ? "CHECKING…" : "DETECT INPUTS"}</button></div>
+                <div className="capture-tools" aria-label="Capture from browser"><button onClick={() => setCaptureSource("NOTE")} className={captureSource === "NOTE" ? "active" : ""}><Sparkles size={13} />{translate(enMessages, "capture.note")}</button><button onClick={() => void startVoiceCapture()} className={captureSource === "VOICE" ? "active" : ""} disabled={isListening}>{isListening ? <ScanLine size={13} /> : <Mic size={13} />}{isListening ? "Listening" : translate(enMessages, "capture.voice")}</button><button onClick={() => documentInputRef.current?.click()} className={captureSource === "DOCUMENT" ? "active" : ""}><FileText size={13} />{translate(enMessages, "capture.document")}</button><button ref={cameraButtonRef} onClick={() => void openCamera()} className={captureSource === "CAMERA" ? "active" : ""}><Camera size={13} />{translate(enMessages, "capture.camera")}</button></div>
+                <div className="microphone-picker"><div><span className="microphone-picker-label">VOICE INPUT</span><select value={selectedMicrophoneId} onChange={(event) => setSelectedMicrophoneId(event.target.value)} disabled={!microphones.length || isListening} aria-label="Preferred microphone input"><option value="">{microphones.length ? "Browser default microphone" : "Detect microphones first"}</option>{microphones.map((device, index) => <option key={`${device.deviceId}-${index}`} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}</select></div><button onClick={() => void discoverMicrophones()} disabled={isDiscoveringMicrophones || isListening}>{isDiscoveringMicrophones ? translate(enMessages, "capture.detecting") : translate(enMessages, "capture.detectInputs")}</button></div>
                 {isListening && <div className="audio-wave" role="status" aria-label="Microphone active; listening for a context note"><span /><span /><span /><span /><span /><span /><span /><span /><em>MIC ACTIVE</em></div>}
-                <div className="capture-status" aria-live="polite">{captureStatus}</div>
-                <div className="capture-actions"><span className="capture-privacy">Text, graph, and saved threads work offline after first load. Browser voice may need its provider; strict offline voice is available in the Android app.</span><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>Map context <Send size={14} /></button></div>
+                <div className="capture-status" role="status" aria-live="polite">{captureStatus}</div>
+                <div className="capture-actions"><span className="capture-privacy">Text, graph, and saved threads work offline after first load. Browser voice may need its provider; strict offline voice is available in the Android app.</span><button className="capture-submit" onClick={addLiveContext} disabled={!userInput.trim()}>{translate(enMessages, "capture.map")} <Send size={14} /></button></div>
                 {installStatus && <div className="pwa-install-status" aria-live="polite">{installStatus}</div>}
               </div>
               <div className="stage-top"><div><span className="micro-label">NOW IN FOCUS</span><h3>{activeMemory.label}</h3></div><span className="stage-status" style={{ color: activeMemory.color }}><i style={{ backgroundColor: activeMemory.color }} /> {activeMemory.status}</span></div>
               <div className="graph-viewport">
                 <div className={isGraphInteracting ? "memory-graph is-gesturing" : "memory-graph"} style={{ "--memory-color": activeMemory.color } as CSSProperties} onPointerDown={onGraphPointerDown} onPointerMove={onGraphPointerMove} onPointerUp={onGraphPointerEnd} onPointerCancel={onGraphPointerEnd}>
-                  <div className="graph-scene" style={{ transform: `translate(${graphView.x}px, ${graphView.y}px) scale(${graphView.scale})` }}>
+                  <div className="graph-scene" aria-hidden="true" style={{ transform: `translate(${graphView.x}px, ${graphView.y}px) scale(${graphView.scale})` }}>
                     <svg className="graph-connections" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                       {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <line key={`${activeMemory.key}-core-${index}-${node}`} x1="50" y1="50" x2={point.x} y2={point.y} />; })}
                       {activeMemory.nodes.slice(1).map((node, index) => { const first = graphPositions[index % graphPositions.length]; const next = graphPositions[(index + 1) % graphPositions.length]; return <line key={`${activeMemory.key}-relation-${index}-${node}`} className="graph-link-secondary" x1={first.x} y1={first.y} x2={next.x} y2={next.y} />; })}
                     </svg>
-                    {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <button key={`${activeMemory.key}-node-${index}-${node}`} className={selectedNode === node ? "memory-node selected" : "memory-node"} style={{ "--node-x": `${point.x}%`, "--node-y": `${point.y}%` } as CSSProperties} onClick={() => setSelectedNode(node)}>{node}</button>; })}
+                    {activeMemory.nodes.map((node, index) => { const point = graphPositions[index % graphPositions.length]; return <button key={`${activeMemory.key}-node-${index}-${node}`} tabIndex={-1} className={selectedNode === node ? "memory-node selected" : "memory-node"} style={{ "--node-x": `${point.x}%`, "--node-y": `${point.y}%` } as CSSProperties} onClick={() => setSelectedNode(node)}>{node}</button>; })}
                     <div className="memory-core"><Network size={17} /><span>CONTEXT<br />GRAPH</span></div>
                   </div>
                   <div className="graph-inspector"><span className="micro-label">SELECTED LINK</span><strong>{selectedNode ?? activeMemory.nodes[0]} <i>→</i> {activeMemory.label}</strong></div>
                 </div>
-                <div className="graph-gesture-bar"><span>PINCH TO ZOOM · DRAG TO PAN</span><div><button aria-label="Zoom out" onClick={() => adjustGraphZoom(-0.15)}><Minus size={13} /></button><output aria-live="polite">{Math.round(graphView.scale * 100)}%</output><button aria-label="Zoom in" onClick={() => adjustGraphZoom(0.15)}><Plus size={13} /></button><button className="graph-reset" onClick={resetGraphView}><RotateCcw size={12} /> Reset</button></div></div>
+                <div className="graph-gesture-bar"><span>{gestureHint(deviceProfile)}</span><div><button aria-label="Zoom out" onClick={() => adjustGraphZoom(-0.15)}><Minus size={13} /></button><output aria-live="polite">{Math.round(graphView.scale * 100)}%</output><button aria-label="Zoom in" onClick={() => adjustGraphZoom(0.15)}><Plus size={13} /></button><button className="graph-reset" onClick={resetGraphView}><RotateCcw size={12} /> Reset</button></div></div>
+                <div className="graph-structured" role="group" aria-label={`Context relationships for ${activeMemory.label}`}>
+                  <span className="micro-label">RELATIONSHIPS · STRUCTURED VIEW</span>
+                  <p className="graph-structured-summary">Key link: {contextGraph.relationshipSummary}</p>
+                  <ul className="graph-structured-list">
+                    {contextGraph.edges.map((edge) => {
+                      const target = contextGraph.nodes.find((graphNode) => graphNode.id === edge.target);
+                      if (!target) return null;
+                      const isSelected = selectedNode === target.label;
+                      return (
+                        <li key={edge.id}>
+                          <button type="button" className={isSelected ? "graph-rel selected" : "graph-rel"} aria-pressed={isSelected} onClick={() => setSelectedNode(target.label)}>
+                            <span className="graph-rel-center">{contextGraph.center.label}</span>
+                            <span className="graph-rel-arrow" aria-hidden="true">→</span>
+                            <span className="graph-rel-node">{target.label}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="graph-structured-meta">Source: {contextGraph.provenance.source} · Status: {contextGraph.provenance.status} · Confidence: {contextGraph.provenance.confidence}</p>
+                </div>
               </div>
               <div className="memory-evidence"><div><span className="micro-label">EVIDENCE</span><strong>{activeMemory.source}</strong></div><div><span className="micro-label">RELATIONSHIP</span><strong>{activeMemory.relationship}</strong></div><div><span className="micro-label">CONFIDENCE</span><strong>{activeMemory.confidence}</strong></div></div>
               <div className="memory-ledger"><div className="ledger-source"><span className="micro-label">CAPTURED INPUT</span><p>{activeMemory.raw}</p></div><div className="ledger-details"><span className="micro-label">EXTRACTED LOCALLY</span>{activeMemory.details.map((detail, index) => <span key={`${activeMemory.key}-detail-${index}-${detail}`}>{detail}</span>)}</div></div>
-              <div className="memory-suggestion"><span className="micro-label">CONTEXTOS SAYS</span><p>“{activeMemory.memory}”</p><button onClick={() => setShowEvidence(!showEvidence)} aria-expanded={showEvidence}>{activeMemory.action} <ArrowUpRight size={14} /></button>{showEvidence && <div className="memory-reasoning"><span className="micro-label">WHY CONTEXTOS SWITCHED</span><p>{activeMemory.why}</p></div>}</div>
+              <div className="memory-suggestion"><span className="micro-label">CONTEXTOS SAYS</span>{isDismissed ? <p className="advisory-dismissed">Suggestion hidden. <button type="button" className="advisory-link" onClick={showSuggestion}>Show suggestion</button></p> : <><p>“{activeMemory.memory}”</p><p className="advisory-note">Suggestion · you decide. No action is taken automatically. {uncertaintyPhrase(parseConfidence(activeMemory.confidence))}.</p><div className="advisory-actions"><button onClick={() => setShowEvidence(!showEvidence)} aria-expanded={showEvidence}>{activeMemory.action} <ArrowUpRight size={14} /></button><button type="button" className="advisory-dismiss" onClick={dismissSuggestion}>{translate(enMessages, "action.dismiss")}</button></div>{showEvidence && <div className="memory-reasoning"><span className="micro-label">WHY CONTEXTOS SWITCHED</span><p>{activeMemory.why}</p></div>}</>}</div>
+              <div className="memory-governance">
+                {isLive && <button type="button" onClick={() => forgetMemory(activeMemory.key)}>Forget this saved context</button>}
+                {liveMemories.length > 0 && <button type="button" onClick={clearAllMemories}>{translate(enMessages, "data.clearAll")}</button>}
+                {governanceNotice && <span className="memory-governance-notice" role="status" aria-live="polite">{governanceNotice}{undoMemories && <button type="button" onClick={undoDelete}>{translate(enMessages, "action.undo")}</button>}</span>}
+              </div>
             </div>
           </div>
         </section>
@@ -473,6 +613,8 @@ export default function Home() {
         </section>
 
         <section id="trust" className="trust section-pad"><div className="trust-copy"><div className="section-kicker">05 / A memory you can govern</div><h2>Useful because<br /><em>you’re in control.</em></h2><p>Context is powerful only when it is legible. Every surfaced insight carries its source, its confidence, and a clear way to correct or forget it.</p><div className="trust-points"><div><LockKeyhole size={18} /><span><strong>Private by default</strong>On-device first. Cloud only when you choose.</span></div><div><Timer size={18} /><span><strong>Time-aware</strong>Old context can fade. Nothing is permanent by accident.</span></div><div><CircleHelp size={18} /><span><strong>Explainable</strong>See why the system made the connection.</span></div></div></div><div className="privacy-visual"><img src="/manus-storage/context-privacy_86c3a403.png" alt="Abstract private on-device intelligence symbol" /><span className="privacy-tag tag-source">SOURCE / PDF</span><span className="privacy-tag tag-memory">MEMORY / TASK</span><span className="privacy-tag tag-action">ACTION / YOUR CALL</span></div></section>
+
+        <ContinuityPanel />
 
         <section className="closing section-pad"><div className="closing-index">CONTEXTOS<br /><span>THE OPERATING LAYER FOR MEANING</span></div><h2>Stop starting<br /><em>from zero.</em></h2><p>The best assistant is not the one that says more. It is the one that already understands the thread.</p><button className="primary-button" onClick={() => scrollToId("top")}>Revisit the proposition <ArrowUpRight size={17} /></button></section>
       </main>

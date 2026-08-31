@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">ContextOS</string>
+    <string name="capture_image">Capture image</string>
+    <string name="add_document">Add document</string>
+    <string name="voice_note">Voice note</string>
+    <string name="remember_locally">Remember locally</string>
+    <string name="try_local_demo">Try local demo</string>
+    <string name="ask_locally">Ask locally</string>
+    <string name="ask_by_voice">Ask by voice</string>
+    <string name="forget_local_context">Forget this local context</string>
 </resources>

@@ -111,3 +111,15 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Prime Agent (development-only tool; never part of the product build).
+# Ignore the nested checkout and machine-local agent state; keep
+# .prime/agent/settings.json and .prime/agent/skills/ tracked on purpose.
+/prime-agent/
+.prime/agent/auth.json
+.prime/agent/sessions/
+.prime/agent/logs/
+.prime/agent/kernel-venv/
+.prime/agent/*-debug.log
+.prime/agent/cron-jobs.json
+.prime/agent/daemon-update-restarts/

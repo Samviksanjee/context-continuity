@@ -41,7 +41,14 @@ dependencies {
   implementation("androidx.compose.ui:ui")
   implementation("androidx.compose.ui:ui-tooling-preview")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+  // Bundled models keep OCR available offline on devices with or without Google Play services.
   implementation("com.google.mlkit:text-recognition:16.0.1")
+  implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+  implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+  implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
+  implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+
   debugImplementation("androidx.compose.ui:ui-tooling")
   testImplementation("junit:junit:4.13.2")
 }

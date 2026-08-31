@@ -1,81 +1,78 @@
-# ContextOS Android Prototype
+# ContextOS for Android
 
-This directory contains the native, **local-only Android MVP** for ContextOS. It accepts intentionally shared text, documents, images, private notes, and user-triggered voice notes; runs OCR and (when available) the Android on-device speech recognizer; builds a local context graph; produces deterministic, explainable suggestions; and lets users delete a thread. It declares **no `INTERNET` permission** and includes no analytics, advertising, notification listener, accessibility service, account, contact, calendar, location, or identifier access.
+This directory contains the native, **local-only Android 10+ app** for ContextOS. It is vendor-neutral: the same APK can run on supported Samsung, Pixel, Motorola, Xiaomi, Redmi, POCO, OnePlus, OPPO, realme, vivo, iQOO, Nothing, Sony, Nokia, and other Android devices. Runtime behavior is selected from reported capabilities, never from a manufacturer allowlist.
 
-The project is deliberately a standalone Android application, not a modified iQOO system component. It is a deployable vertical slice for real user-initiated context capture, but it cannot claim Origin Island integration, arbitrary cross-app memory, or system-level task handoff without an iQOO/vivo OEM agreement. Android’s application sandbox prevents a normal application from reading another application’s private data by default.[1]
+The app accepts deliberately shared text, documents, images, private notes, camera captures, and optional voice input. It builds an encrypted local context graph, produces deterministic and explainable suggestions, answers local questions with provenance, and lets the user delete a thread. It declares **no `INTERNET` permission** and includes no analytics, advertising, notification listener, accessibility service, account, contact, calendar, location, or identifier access.
 
-| Capability | Included in this prototype | Processing location |
+## How the app adapts to a phone
+
+At startup and after returning from Android settings, `DeviceCapabilityDetector` builds a runtime profile:
+
+| Capability | Adaptive behavior | Universal fallback |
 |---|---|---|
-| Private note ingestion | Yes | App process and encrypted app-private storage |
-| Text shared from another app | Yes, through the Android share sheet | App process and encrypted app-private storage |
-| Image/PDF OCR | Yes, through user-selected input or camera capture | ML Kit on-device OCR |
-| Voice note | Yes, after microphone permission and only when Android reports an on-device recognizer is available | Android `createOnDeviceSpeechRecognizer`; no remote fallback |
-| Local graph matching | Yes | Kotlin deterministic rule engine |
-| Natural-language graph query | Yes, in text or through on-device voice when available | Local thread, evidence, task, and relationship matching with visible provenance |
-| Explainable suggestion and provenance | Yes | App process |
-| Forget / full local deletion | Thread-level forget is included; settings wipe is documented as the next UI addition | App-private encrypted storage |
-| Local foundation-model enrichment | Interface-ready, but model provisioning is intentionally not bundled | AICore/ML Kit GenAI or LiteRT-LM, device dependent |
-| Origin Island / Office Kit / privileged handoff | No | Requires OEM integration |
+| Local context reasoning | Deterministic Kotlin engine works on the CPU on every supported device. | Always available; no model or cloud service is required. |
+| OCR | Bundled Latin, Chinese, Devanagari, Japanese, and Korean ML Kit models; the primary script follows the phone locale. | User can paste/share text or enter a private note. |
+| Offline speech | Used only on Android 12+ when Android reports an installed on-device recognizer and microphone permission is granted. | Typed notes and typed questions remain enabled. |
+| Camera | Enabled only when the phone has camera hardware and a compatible capture activity. | Choose an existing image through the document picker. |
+| Documents | Enabled only when an Android document provider can handle the request. | Share text directly or enter a note. |
+| Memory/processing | Low-RAM phones use a 1280 px image limit and one PDF page; other phones use 2048 px and up to three pages. | Text is bounded to 12,000 characters on every device. |
+| Optional OEM AI | May be reported through `DeviceAiFeatureProvider` only by a documented, signed integration. | Deterministic reasoning, bundled OCR, and explicit user capture remain active. |
+
+There is no generic Android API that safely exposes every manufacturer's private foundation model or NPU. ContextOS therefore does not guess from `Build.MANUFACTURER`, probe hidden services, or claim that an installed OEM assistant is available to third-party apps. A future Gemini Nano/AICore, LiteRT, or OEM implementation must be a separate provider that reports actual readiness and fails back to the deterministic engine. There is never a silent cloud fallback.
+
+## Included security and compatibility behavior
+
+- Android 10 and 11 never load Android 12-only speech calls; voice is shown as unavailable instead of crashing.
+- Camera and microphone are declared optional, so app stores do not exclude otherwise compatible devices.
+- Speech is locale-aware, times out, maps common provider errors, and releases the recognizer on every terminal path.
+- Image decoding, OCR, text reading, and PDF rendering are bounded for predictable memory use.
+- Capture APIs return typed success/empty/unsupported outcomes, so error messages cannot become stored evidence.
+- The encrypted graph is excluded from cloud backup and device transfer; its Android Keystore key remains non-exportable.
+- External content is evidence only. It cannot execute actions or become a system instruction.
 
 ## Build and install
 
-Open `android-contextos` in Android Studio (Ladybug or newer) with an installed Android 36 SDK. Connect an Android 10+ device, preferably an eligible OriginOS 6 device for performance testing, then choose **Run**. The app has no runtime network path, so build tooling may download Gradle dependencies during development, but the installed app does not request network access or send user data to a cloud service.
+Open `android-contextos` in a current Android Studio installation with Android SDK 36 and JDK 17. Connect any Android 10+ test device with USB debugging enabled, then choose **Run**. On Windows PowerShell, the command-line build is:
 
-```bash
-cd android-contextos
-./gradlew :app:testDebugUnitTest :app:assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-This repository ships the Gradle wrapper, so `./gradlew :app:testDebugUnitTest :app:assembleDebug` is the preferred validation and build command. The local engine has five automated unit tests covering work, home, environmental-text handling, provenance-bound query matching, and next-step query behavior. Large model weights are intentionally not included. A custom LiteRT-LM model must be provisioned locally by the user or device vendor; it must never be fetched by the ContextOS app at runtime when operating in strict local-only mode.
+The Gradle build may download dependencies on the development computer. The installed APK has no runtime network permission. OCR models are bundled so OCR also works on devices without Google Play services; bundling all five script families increases APK size.
 
 ## Architecture
 
 ```text
 User-initiated capture
   ├── note / shared text
-  ├── document selection
-  └── camera image
-         ↓
-On-device extraction
-  ├── ML Kit OCR for image/PDF text
+  ├── document / existing image
+  ├── optional camera
+  └── optional Android on-device speech
+          ↓
+Capability-selected local extraction
+  ├── locale-selected bundled ML Kit OCR
+  ├── memory-aware image and PDF limits
   └── deterministic entity/task parser
-         ↓
-Local graph repository
-  ├── encrypted app-private file
-  ├── evidence + hash + consent marker
-  └── context-thread matching
-         ↓
+          ↓
+Encrypted local graph
+  ├── evidence + digest + consent marker
+  ├── explicit active context
+  └── local query and relationship matching
+          ↓
 Visible recommendation
-  ├── source and explanation shown
-  └── user can forget the thread
-
-Local question
-  ├── typed or on-device voice query
-  ├── matches saved local thread, evidence, tasks, and relations
-  └── returns answer + provenance; never invokes an action
+  ├── source, confidence, and explanation
+  └── user-controlled thread deletion
 ```
 
-The encryption key is generated in Android Keystore and is non-exportable from the application process. The data file remains in internal app storage and Android backup is disabled. Android Keystore supports non-exportable key material and can bind supported keys to device secure hardware where available.[2]
+## Supported versus optional AI
 
-## Safe processing model
-
-External content is always classified as **evidence**, not as executable instruction text. The local engine uses explicit task and relationship patterns only; it does not expose an autonomous action tool, access an accessibility tree, or execute a command found in a document. This makes the vertical slice resistant to prompt-injection-style instructions embedded in shared files.
-
-The product architecture supports optional on-device generative enrichment, not mandatory model use. Gemini Nano through AICore can process supported requests locally on eligible devices; LiteRT-LM can instead run a vendor- or user-provisioned local model with GPU/NPU acceleration.[3] [4] In both paths, an assistant response must remain advisory and source-linked.
-
-## OEM deployment path
-
-For an iQOO feature, iQOO/vivo would need to sponsor a privileged system module or a signed partner integration. The required work is described in [OEM integration boundaries](../docs/OEM_INTEGRATION.md) and is not something a standalone APK can enable. The relevant public OriginOS product surface already includes AI search, AI captions, document scanning, and other contextual tools; ContextOS should be positioned as the governed continuity layer connecting such inputs, not as a replacement for OriginOS.[5]
+The shipped app actually uses three local intelligence layers: deterministic graph reasoning, bundled OCR, and Android's on-device speech recognizer when the platform reports it ready. Proprietary device AI is not automatically accessible to a normal APK. Integrating a vendor model, system context surface, or cross-device handoff requires a public/partner SDK, explicit consent, signature-level authorization where applicable, availability checks, and a separate security review. See [OEM integration boundaries](../docs/OEM_INTEGRATION.md).
 
 ## References
 
-[1]: https://source.android.com/docs/security/app-sandbox "Android Open Source Project — Application Sandbox"
-
-[2]: https://developer.android.com/privacy-and-security/keystore "Android Developers — Android Keystore System"
-
-[3]: https://developer.android.com/ai/gemini-nano "Android Developers — Gemini Nano"
-
-[4]: https://developers.google.com/edge/litert-lm/android "Google AI Edge — Get Started with LiteRT-LM on Android"
-
-[5]: https://www.iqoo.com/in/originos "iQOO — OriginOS 6"
+- [Android application sandbox](https://source.android.com/docs/security/app-sandbox)
+- [Android Keystore](https://developer.android.com/privacy-and-security/keystore)
+- [ML Kit Text Recognition v2 for Android](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
+- [Android on-device AI overview](https://developer.android.com/ai)
+- [LiteRT for Android](https://ai.google.dev/edge/litert/android)

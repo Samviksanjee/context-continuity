@@ -19,6 +19,14 @@ jobs:
       - run: corepack pnpm check
       - run: corepack pnpm test
       - run: corepack pnpm build
+      # Publish the deployable web bundle as a build artifact. The final deploy
+      # hop (to a specific host) is intentionally omitted until the host is
+      # chosen; download this artifact or add a deploy job that consumes it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist/public
+          if-no-files-found: error
 
   android:
     name: Android (unit tests, assemble debug)
